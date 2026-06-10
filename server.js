@@ -9,8 +9,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+/*
+========================================
+ROOT
+========================================
+*/
+
 app.get("/", (req, res) => {
-  res.send("VIGYON IA Backend funcionando 🚀");
+  res.status(200).send("VIGYON IA Backend funcionando 🚀");
 });
 
 /*
@@ -29,11 +35,14 @@ app.get("/webhook", (req, res) => {
   if (mode && token) {
     if (mode === "subscribe" && token === verify_token) {
       console.log("Webhook verificado correctamente ✅");
+
       return res.status(200).send(challenge);
     } else {
       return res.sendStatus(403);
     }
   }
+
+  res.sendStatus(400);
 });
 
 /*
@@ -51,8 +60,14 @@ app.post("/webhook", (req, res) => {
   res.sendStatus(200);
 });
 
-const PORT = process.env.PORT || 3000;
+/*
+========================================
+START SERVER
+========================================
+*/
 
-app.listen(PORT, () => {
+const PORT = process.env.PORT || 10000;
+
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor corriendo en puerto ${PORT}`);
 });
