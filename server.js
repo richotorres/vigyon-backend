@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import axios from "axios";
+import OpenAI from "openai";
 
 dotenv.config();
 
@@ -9,6 +10,10 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 /*
 ========================================
@@ -81,67 +86,88 @@ const sendWhatsAppMessage = async (to, message) => {
 
 /*
 ========================================
-OPENAI RESPONSE
+GUARDAR INCIDENTE EN SUPABASE
 ========================================
 */
 
-const getAIResponse = async (text) => {
+const guardarIncidente = async (
+  telefono,
+  mensaje,
+  tipoDelito,
+  prioridad
+) => {
   try {
-    const response = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
+    await axios.post(
+      `${process.env.SUPABASE_URL}/rest/v1/incidentes`,
       {
-        model: "gpt-4.1-mini",
-        messages: [
-          {
-            role: "system",
-            content: `
-Eres VIGYON IA.
-
-Un sistema de seguridad ciudadana para Tunja, Colombia.
-
-Tu trabajo es:
-
-- detectar emergencias
-- detectar robos
-- detectar violencia intrafamiliar
-- detectar drogas
-- detectar riñas
-- detectar personas sospechosas
-- responder de forma profesional
-- responder corto y claro
-- priorizar seguridad ciudadana
-
-Nunca inventes información.
-
-Si el caso parece urgente:
-- pide ubicación
-- pide audio corto
-- indica que un operador revisará el caso
-`,
-          },
-          {
-            role: "user",
-            content: text,
-          },
-        ],
-        max_tokens: 150,
+        telefono,
+        mensaje,
+        tipo_delito: tipoDelito,
+        prioridad,
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          apikey: process.env.SUPABASE_SERVICE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
           "Content-Type": "application/json",
+          Prefer: "return=minimal",
         },
       }
     );
 
-    return response.data.choices[0].message.content;
+    console.log("Incidente guardado en Supabase ✅");
   } catch (error) {
     console.log(
-      "Error OpenAI:",
+      "Error guardando incidente:",
       error.response?.data || error.message
     );
+  }
+};
 
-    return "⚠️ VIGYON IA no pudo procesar tu solicitud.";
+/*
+========================================
+ANALIZAR EMERGENCIA CON IA
+========================================
+*/
+
+const analizarEmergencia = async (mensaje) => {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "system",
+          content: `
+Eres una IA de emergencias de Colombia.
+
+Debes detectar:
+- tipo_delito
+- prioridad
+
+Responde SOLO en JSON.
+
+Ejemplo:
+{
+  "tipo_delito": "robo",
+  "prioridad": "alta"
+}
+`,
+        },
+        {
+          role: "user",
+          content: mensaje,
+        },
+      ],
+    });
+
+    return JSON.parse(completion.choices[0].message.content);
+  } catch (error) {
+    console.log("Error OpenAI:", error.response?.data || error.message);
+
+    return {
+      tipo_delito: "desconocido",
+      prioridad: "media",
+    };
   }
 };
 
@@ -170,37 +196,41 @@ app.post("/webhook", async (req, res) => {
 
       /*
       ========================================
-      BOTÓN DE PÁNICO
+      ANALIZAR CON IA
       ========================================
       */
 
-      if (
-        text.toLowerCase().includes("ayuda") ||
-        text.toLowerCase().includes("emergencia") ||
-        text.toLowerCase().includes("sos")
-      ) {
-        await sendWhatsAppMessage(
-          from,
-          "🚨 ALERTA VIGYON ACTIVADA\n\n📍 Comparte tu ubicación.\n🎤 Envía un audio corto.\n👮 Un operador revisará tu caso."
-        );
-      } else {
+      const analisis = await analizarEmergencia(text);
 
-        /*
-        ========================================
-        OPENAI RESPONSE
-        ========================================
-        */
+      console.log("Analisis IA:", analisis);
 
-        const aiReply = await getAIResponse(text);
+      /*
+      ========================================
+      GUARDAR INCIDENTE
+      ========================================
+      */
 
-        await sendWhatsAppMessage(from, aiReply);
-      }
+      await guardarIncidente(
+        from,
+        text,
+        analisis.tipo_delito,
+        analisis.prioridad
+      );
+
+      /*
+      ========================================
+      RESPUESTA
+      ========================================
+      */
+
+      await sendWhatsAppMessage(
+        from,
+        `🚨 VIGYON IA detectó una posible emergencia.\n\nTipo: ${analisis.tipo_delito}\nPrioridad: ${analisis.prioridad}\n\n📍 Envía tu ubicación.\n🎤 Envía un audio corto.\n👮 Un operador revisará tu caso.`
+      );
     }
 
     res.sendStatus(200);
-
   } catch (error) {
-
     console.log("Error webhook:", error);
 
     res.sendStatus(500);
