@@ -94,31 +94,37 @@ const guardarIncidente = async (
   telefono,
   mensaje,
   tipoDelito,
-  prioridad
+  prioridad,
+  ubicacion = null
 ) => {
   try {
-    await axios.post(
+    const response = await axios.post(
       `${process.env.SUPABASE_URL}/rest/v1/incidentes`,
       {
         telefono,
         mensaje,
         tipo_delito: tipoDelito,
         prioridad,
+        ubicacion,
       },
       {
         headers: {
           apikey: process.env.SUPABASE_SERVICE_KEY,
           Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
           "Content-Type": "application/json",
-          Prefer: "return=minimal",
+          Prefer: "return=representation",
         },
       }
     );
 
     console.log("Incidente guardado en Supabase ✅");
+    console.log(response.data);
+
   } catch (error) {
+
+    console.log("ERROR SUPABASE ❌");
+
     console.log(
-      "Error guardando incidente:",
       error.response?.data || error.message
     );
   }
@@ -132,8 +138,14 @@ ANALIZAR EMERGENCIA CON IA
 
 const analizarEmergencia = async (mensaje) => {
   try {
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
+
+      response_format: {
+        type: "json_object",
+      },
+
       messages: [
         {
           role: "system",
@@ -144,11 +156,16 @@ Debes detectar:
 - tipo_delito
 - prioridad
 
+Prioridades:
+- baja
+- media
+- alta
+
 Responde SOLO en JSON.
 
 Ejemplo:
 {
-  "tipo_delito": "robo",
+  "tipo_delito": "atraco",
   "prioridad": "alta"
 }
 `,
@@ -160,9 +177,16 @@ Ejemplo:
       ],
     });
 
-    return JSON.parse(completion.choices[0].message.content);
+    return JSON.parse(
+      completion.choices[0].message.content
+    );
+
   } catch (error) {
-    console.log("Error OpenAI:", error.response?.data || error.message);
+
+    console.log(
+      "Error OpenAI:",
+      error.response?.data || error.message
+    );
 
     return {
       tipo_delito: "desconocido",
@@ -178,7 +202,9 @@ RECEIVE WHATSAPP MESSAGES
 */
 
 app.post("/webhook", async (req, res) => {
+
   try {
+
     console.log(
       "Mensaje recibido:",
       JSON.stringify(req.body, null, 2)
@@ -188,49 +214,73 @@ app.post("/webhook", async (req, res) => {
       req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
     if (message) {
+
       const from = message.from;
-      const text = message.text?.body || "";
-
-      console.log("Mensaje de:", from);
-      console.log("Texto:", text);
 
       /*
       ========================================
-      ANALIZAR CON IA
+      MENSAJE TEXTO
       ========================================
       */
 
-      const analisis = await analizarEmergencia(text);
+      if (message.type === "text") {
 
-      console.log("Analisis IA:", analisis);
+        const text = message.text?.body || "";
+
+        console.log("Mensaje de:", from);
+        console.log("Texto:", text);
+
+        const analisis = await analizarEmergencia(text);
+
+        console.log("Analisis IA:", analisis);
+
+        await guardarIncidente(
+          from,
+          text,
+          analisis.tipo_delito,
+          analisis.prioridad
+        );
+
+        await sendWhatsAppMessage(
+          from,
+          `🚨 VIGYON IA detectó una posible emergencia.\n\nTipo: ${analisis.tipo_delito}\nPrioridad: ${analisis.prioridad}\n\n📍 Envía tu ubicación.\n🎤 Envía un audio corto.\n👮 Un operador revisará tu caso.`
+        );
+      }
 
       /*
       ========================================
-      GUARDAR INCIDENTE
+      UBICACION
       ========================================
       */
 
-      await guardarIncidente(
-        from,
-        text,
-        analisis.tipo_delito,
-        analisis.prioridad
-      );
+      if (message.type === "location") {
 
-      /*
-      ========================================
-      RESPUESTA
-      ========================================
-      */
+        const latitude = message.location.latitude;
+        const longitude = message.location.longitude;
 
-      await sendWhatsAppMessage(
-        from,
-        `🚨 VIGYON IA detectó una posible emergencia.\n\nTipo: ${analisis.tipo_delito}\nPrioridad: ${analisis.prioridad}\n\n📍 Envía tu ubicación.\n🎤 Envía un audio corto.\n👮 Un operador revisará tu caso.`
-      );
+        const ubicacion = `${latitude}, ${longitude}`;
+
+        console.log("Ubicación:", ubicacion);
+
+        await guardarIncidente(
+          from,
+          "Ubicación recibida",
+          "ubicacion",
+          "alta",
+          ubicacion
+        );
+
+        await sendWhatsAppMessage(
+          from,
+          `📍 Ubicación recibida correctamente.\n\nUn operador revisará tu caso lo antes posible.`
+        );
+      }
     }
 
     res.sendStatus(200);
+
   } catch (error) {
+
     console.log("Error webhook:", error);
 
     res.sendStatus(500);
