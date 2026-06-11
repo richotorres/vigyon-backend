@@ -81,6 +81,72 @@ const sendWhatsAppMessage = async (to, message) => {
 
 /*
 ========================================
+OPENAI RESPONSE
+========================================
+*/
+
+const getAIResponse = async (text) => {
+  try {
+    const response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-4.1-mini",
+        messages: [
+          {
+            role: "system",
+            content: `
+Eres VIGYON IA.
+
+Un sistema de seguridad ciudadana para Tunja, Colombia.
+
+Tu trabajo es:
+
+- detectar emergencias
+- detectar robos
+- detectar violencia intrafamiliar
+- detectar drogas
+- detectar riñas
+- detectar personas sospechosas
+- responder de forma profesional
+- responder corto y claro
+- priorizar seguridad ciudadana
+
+Nunca inventes información.
+
+Si el caso parece urgente:
+- pide ubicación
+- pide audio corto
+- indica que un operador revisará el caso
+`,
+          },
+          {
+            role: "user",
+            content: text,
+          },
+        ],
+        max_tokens: 150,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    return response.data.choices[0].message.content;
+  } catch (error) {
+    console.log(
+      "Error OpenAI:",
+      error.response?.data || error.message
+    );
+
+    return "⚠️ VIGYON IA no pudo procesar tu solicitud.";
+  }
+};
+
+/*
+========================================
 RECEIVE WHATSAPP MESSAGES
 ========================================
 */
@@ -104,7 +170,7 @@ app.post("/webhook", async (req, res) => {
 
       /*
       ========================================
-      BOTÓN DE PÁNICO BÁSICO
+      BOTÓN DE PÁNICO
       ========================================
       */
 
@@ -118,15 +184,23 @@ app.post("/webhook", async (req, res) => {
           "🚨 ALERTA VIGYON ACTIVADA\n\n📍 Comparte tu ubicación.\n🎤 Envía un audio corto.\n👮 Un operador revisará tu caso."
         );
       } else {
-        await sendWhatsAppMessage(
-          from,
-          "✅ VIGYON IA recibió tu mensaje.\n\n🚨 Si es una emergencia escribe:\nAYUDA\nSOS\nEMERGENCIA"
-        );
+
+        /*
+        ========================================
+        OPENAI RESPONSE
+        ========================================
+        */
+
+        const aiReply = await getAIResponse(text);
+
+        await sendWhatsAppMessage(from, aiReply);
       }
     }
 
     res.sendStatus(200);
+
   } catch (error) {
+
     console.log("Error webhook:", error);
 
     res.sendStatus(500);
