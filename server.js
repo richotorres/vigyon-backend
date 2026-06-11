@@ -238,6 +238,10 @@ Prioridades:
 - media
 - alta
 
+Si NO es una emergencia real:
+- tipo_delito = "ninguno"
+- prioridad = "baja"
+
 Responde SOLO en JSON.
 
 Ejemplo:
@@ -351,6 +355,12 @@ app.post("/webhook", async (req, res) => {
         analisis
       );
 
+      /*
+      ========================================
+      GUARDAR INCIDENTE
+      ========================================
+      */
+
       await guardarIncidente(
         from,
         text,
@@ -358,11 +368,30 @@ app.post("/webhook", async (req, res) => {
         analisis.prioridad
       );
 
-      await sendWhatsAppMessage(
-        from,
+      /*
+      ========================================
+      RESPUESTA WHATSAPP
+      ========================================
+      */
 
-        `🚨 VIGYON IA detectó una posible emergencia.\n\nTipo: ${analisis.tipo_delito}\nPrioridad: ${analisis.prioridad}\n\n📍 Envía tu ubicación.\n🎤 Envía un audio corto.\n👮 Un operador revisará tu caso.`
-      );
+      if (
+        analisis.tipo_delito === "ninguno"
+      ) {
+
+        await sendWhatsAppMessage(
+          from,
+
+          `✅ Mensaje recibido.\n\nVIGYON IA no detectó una emergencia crítica.`
+        );
+
+      } else {
+
+        await sendWhatsAppMessage(
+          from,
+
+          `🚨 VIGYON IA detectó una posible emergencia.\n\nTipo: ${analisis.tipo_delito}\nPrioridad: ${analisis.prioridad}\n\n📍 Envía tu ubicación.\n🎤 Envía un audio corto.\n👮 Un operador revisará tu caso.`
+        );
+      }
 
       return res.sendStatus(200);
     }
