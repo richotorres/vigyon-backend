@@ -22,7 +22,10 @@ ROOT
 */
 
 app.get("/", (req, res) => {
-  res.status(200).send("VIGYON IA Backend funcionando 🚀");
+
+  res
+    .status(200)
+    .send("VIGYON IA Backend funcionando 🚀");
 });
 
 /*
@@ -32,18 +35,36 @@ WEBHOOK VERIFICATION
 */
 
 app.get("/webhook", (req, res) => {
-  const verify_token = process.env.VERIFY_TOKEN;
 
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
+  const verify_token =
+    process.env.VERIFY_TOKEN;
+
+  const mode =
+    req.query["hub.mode"];
+
+  const token =
+    req.query["hub.verify_token"];
+
+  const challenge =
+    req.query["hub.challenge"];
 
   if (mode && token) {
-    if (mode === "subscribe" && token === verify_token) {
-      console.log("Webhook verificado correctamente ✅");
 
-      return res.status(200).send(challenge);
+    if (
+      mode === "subscribe" &&
+      token === verify_token
+    ) {
+
+      console.log(
+        "Webhook verificado correctamente ✅"
+      );
+
+      return res
+        .status(200)
+        .send(challenge);
+
     } else {
+
       return res.sendStatus(403);
     }
   }
@@ -57,31 +78,49 @@ SEND WHATSAPP MESSAGE
 ========================================
 */
 
-const sendWhatsAppMessage = async (to, message) => {
+const sendWhatsAppMessage = async (
+  to,
+  message
+) => {
+
   try {
+
     await axios({
       method: "POST",
-      url: `https://graph.facebook.com/v20.0/${process.env.PHONE_NUMBER_ID}/messages`,
+
+      url:
+        `https://graph.facebook.com/v20.0/${process.env.PHONE_NUMBER_ID}/messages`,
+
       headers: {
-        Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-        "Content-Type": "application/json",
+        Authorization:
+          `Bearer ${process.env.WHATSAPP_TOKEN}`,
+
+        "Content-Type":
+          "application/json",
       },
+
       data: {
-        messaging_product: "whatsapp",
+        messaging_product:
+          "whatsapp",
+
         to: to,
+
         text: {
           body: message,
         },
       },
     });
 
-    console.log("Mensaje enviado correctamente ✅");
+    console.log(
+      "Mensaje enviado correctamente ✅"
+    );
 
   } catch (error) {
 
     console.log(
       "Error enviando mensaje:",
-      error.response?.data || error.message
+      error.response?.data ||
+      error.message
     );
   }
 };
@@ -102,36 +141,62 @@ const guardarIncidente = async (
 
   try {
 
-    console.log("SUPABASE_URL:", process.env.SUPABASE_URL);
+    const url =
+      "https://oszjlipttlqvyqwffrdc.supabase.co/rest/v1/incidentes";
 
-    const response = await axios.post(
-      `${process.env.SUPABASE_URL}/rest/v1/incidentes`,
-      {
-        telefono,
-        mensaje,
-        tipo_delito: tipoDelito,
-        prioridad,
-        ubicacion,
-      },
-      {
-        headers: {
-          apikey: process.env.SUPABASE_SERVICE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
-          "Content-Type": "application/json",
-          Prefer: "return=representation",
-        },
-      }
+    console.log(
+      "URL SUPABASE:",
+      url
     );
 
-    console.log("Incidente guardado en Supabase ✅");
+    const response =
+      await axios.post(
+
+        url,
+
+        {
+          telefono,
+          mensaje,
+          tipo_delito:
+            tipoDelito,
+
+          prioridad,
+          ubicacion,
+        },
+
+        {
+          headers: {
+
+            apikey:
+              process.env.SUPABASE_SERVICE_KEY,
+
+            Authorization:
+              `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+
+            "Content-Type":
+              "application/json",
+
+            Prefer:
+              "return=representation",
+          },
+        }
+      );
+
+    console.log(
+      "Incidente guardado en Supabase ✅"
+    );
+
     console.log(response.data);
 
   } catch (error) {
 
-    console.log("ERROR SUPABASE ❌");
+    console.log(
+      "ERROR SUPABASE ❌"
+    );
 
     console.log(
-      error.response?.data || error.message
+      error.response?.data ||
+      error.message
     );
   }
 };
@@ -142,21 +207,26 @@ ANALIZAR EMERGENCIA CON IA
 ========================================
 */
 
-const analizarEmergencia = async (mensaje) => {
+const analizarEmergencia = async (
+  mensaje
+) => {
 
   try {
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
+    const completion =
+      await openai.chat.completions.create({
 
-      response_format: {
-        type: "json_object",
-      },
+        model: "gpt-4.1-mini",
 
-      messages: [
-        {
-          role: "system",
-          content: `
+        response_format: {
+          type: "json_object",
+        },
+
+        messages: [
+          {
+            role: "system",
+
+            content: `
 Eres una IA de emergencias de Colombia.
 
 Debes detectar:
@@ -176,28 +246,36 @@ Ejemplo:
   "prioridad": "alta"
 }
 `,
-        },
-        {
-          role: "user",
-          content: mensaje,
-        },
-      ],
-    });
+          },
+
+          {
+            role: "user",
+            content: mensaje,
+          },
+        ],
+      });
 
     return JSON.parse(
-      completion.choices[0].message.content
+      completion
+        .choices[0]
+        .message
+        .content
     );
 
   } catch (error) {
 
     console.log(
       "Error OpenAI:",
-      error.response?.data || error.message
+      error.response?.data ||
+      error.message
     );
 
     return {
-      tipo_delito: "desconocido",
-      prioridad: "media",
+      tipo_delito:
+        "desconocido",
+
+      prioridad:
+        "media",
     };
   }
 };
@@ -214,83 +292,132 @@ app.post("/webhook", async (req, res) => {
 
     console.log(
       "Mensaje recibido:",
-      JSON.stringify(req.body, null, 2)
+      JSON.stringify(
+        req.body,
+        null,
+        2
+      )
     );
 
     const message =
-      req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+      req.body?.entry?.[0]
+      ?.changes?.[0]
+      ?.value?.messages?.[0];
 
-    if (message) {
+    /*
+    ========================================
+    EVITAR DUPLICADOS
+    ========================================
+    */
 
-      const from = message.from;
+    if (!message) {
 
-      /*
-      ========================================
-      MENSAJE TEXTO
-      ========================================
-      */
-
-      if (message.type === "text") {
-
-        const text = message.text?.body || "";
-
-        console.log("Mensaje de:", from);
-        console.log("Texto:", text);
-
-        const analisis = await analizarEmergencia(text);
-
-        console.log("Analisis IA:", analisis);
-
-        await guardarIncidente(
-          from,
-          text,
-          analisis.tipo_delito,
-          analisis.prioridad
-        );
-
-        await sendWhatsAppMessage(
-          from,
-          `🚨 VIGYON IA detectó una posible emergencia.\n\nTipo: ${analisis.tipo_delito}\nPrioridad: ${analisis.prioridad}\n\n📍 Envía tu ubicación.\n🎤 Envía un audio corto.\n👮 Un operador revisará tu caso.`
-        );
-      }
-
-      /*
-      ========================================
-      UBICACION
-      ========================================
-      */
-
-      if (message.type === "location") {
-
-        const latitude = message.location.latitude;
-        const longitude = message.location.longitude;
-
-        const ubicacion = `${latitude}, ${longitude}`;
-
-        console.log("Ubicación:", ubicacion);
-
-        await guardarIncidente(
-          from,
-          "Ubicación recibida",
-          "ubicacion",
-          "alta",
-          ubicacion
-        );
-
-        await sendWhatsAppMessage(
-          from,
-          `📍 Ubicación recibida correctamente.\n\nUn operador revisará tu caso lo antes posible.`
-        );
-      }
+      return res.sendStatus(200);
     }
 
-    res.sendStatus(200);
+    const from =
+      message.from;
+
+    /*
+    ========================================
+    MENSAJE TEXTO
+    ========================================
+    */
+
+    if (
+      message.type === "text"
+    ) {
+
+      const text =
+        message.text?.body || "";
+
+      console.log(
+        "Mensaje de:",
+        from
+      );
+
+      console.log(
+        "Texto:",
+        text
+      );
+
+      const analisis =
+        await analizarEmergencia(
+          text
+        );
+
+      console.log(
+        "Analisis IA:",
+        analisis
+      );
+
+      await guardarIncidente(
+        from,
+        text,
+        analisis.tipo_delito,
+        analisis.prioridad
+      );
+
+      await sendWhatsAppMessage(
+        from,
+
+        `🚨 VIGYON IA detectó una posible emergencia.\n\nTipo: ${analisis.tipo_delito}\nPrioridad: ${analisis.prioridad}\n\n📍 Envía tu ubicación.\n🎤 Envía un audio corto.\n👮 Un operador revisará tu caso.`
+      );
+
+      return res.sendStatus(200);
+    }
+
+    /*
+    ========================================
+    UBICACION
+    ========================================
+    */
+
+    if (
+      message.type === "location"
+    ) {
+
+      const latitude =
+        message.location.latitude;
+
+      const longitude =
+        message.location.longitude;
+
+      const ubicacion =
+        `${latitude}, ${longitude}`;
+
+      console.log(
+        "Ubicación:",
+        ubicacion
+      );
+
+      await guardarIncidente(
+        from,
+        "Ubicación recibida",
+        "ubicacion",
+        "alta",
+        ubicacion
+      );
+
+      await sendWhatsAppMessage(
+        from,
+
+        `📍 Ubicación recibida correctamente.\n\n🚔 Las autoridades fueron notificadas.`
+      );
+
+      return res.sendStatus(200);
+    }
+
+    return res.sendStatus(200);
 
   } catch (error) {
 
-    console.log("Error webhook:", error);
+    console.log(
+      "Error webhook:",
+      error
+    );
 
-    res.sendStatus(500);
+    return res.sendStatus(500);
   }
 });
 
@@ -300,8 +427,16 @@ START SERVER
 ========================================
 */
 
-const PORT = process.env.PORT || 10000;
+const PORT =
+  process.env.PORT || 10000;
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Servidor corriendo en puerto ${PORT}`);
-});
+app.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+
+    console.log(
+      `Servidor corriendo en puerto ${PORT}`
+    );
+  }
+);
