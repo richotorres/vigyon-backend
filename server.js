@@ -76,7 +76,9 @@ const sendWhatsAppMessage = async (to, message) => {
     });
 
     console.log("Mensaje enviado correctamente ✅");
+
   } catch (error) {
+
     console.log(
       "Error enviando mensaje:",
       error.response?.data || error.message
@@ -97,7 +99,11 @@ const guardarIncidente = async (
   prioridad,
   ubicacion = null
 ) => {
+
   try {
+
+    console.log("SUPABASE_URL:", process.env.SUPABASE_URL);
+
     const response = await axios.post(
       `${process.env.SUPABASE_URL}/rest/v1/incidentes`,
       {
@@ -137,6 +143,7 @@ ANALIZAR EMERGENCIA CON IA
 */
 
 const analizarEmergencia = async (mensaje) => {
+
   try {
 
     const completion = await openai.chat.completions.create({
