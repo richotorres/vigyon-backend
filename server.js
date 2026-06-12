@@ -135,19 +135,13 @@ const guardarIncidente = async (
   telefono,
   mensaje,
   tipoDelito,
-  prioridad,
-  ubicacion = null
+  prioridad
 ) => {
 
   try {
 
     const url =
       "https://oszjlipttlqvyqwffrdc.supabase.co/rest/v1/incidentes";
-
-    console.log(
-      "URL SUPABASE:",
-      url
-    );
 
     const response =
       await axios.post(
@@ -161,7 +155,6 @@ const guardarIncidente = async (
             tipoDelito,
 
           prioridad,
-          ubicacion,
         },
 
         {
@@ -186,12 +179,114 @@ const guardarIncidente = async (
       "Incidente guardado en Supabase ✅"
     );
 
-    console.log(response.data);
+    return response.data[0];
 
   } catch (error) {
 
     console.log(
       "ERROR SUPABASE ❌"
+    );
+
+    console.log(
+      error.response?.data ||
+      error.message
+    );
+
+    return null;
+  }
+};
+
+/*
+========================================
+BUSCAR INCIDENTE ACTIVO
+========================================
+*/
+
+const buscarIncidenteActivo = async (
+  telefono
+) => {
+
+  try {
+
+    const response =
+      await axios.get(
+
+        `https://oszjlipttlqvyqwffrdc.supabase.co/rest/v1/incidentes?telefono=eq.${telefono}&estado=eq.pendiente&order=id.desc&limit=1`,
+
+        {
+          headers: {
+
+            apikey:
+              process.env.SUPABASE_SERVICE_KEY,
+
+            Authorization:
+              `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+          },
+        }
+      );
+
+    return response.data[0];
+
+  } catch (error) {
+
+    console.log(
+      "Error buscando incidente activo ❌"
+    );
+
+    return null;
+  }
+};
+
+/*
+========================================
+ACTUALIZAR UBICACION
+========================================
+*/
+
+const actualizarUbicacion = async (
+  incidenteId,
+  ubicacion,
+  googleMaps
+) => {
+
+  try {
+
+    await axios.patch(
+
+      `https://oszjlipttlqvyqwffrdc.supabase.co/rest/v1/incidentes?id=eq.${incidenteId}`,
+
+      {
+        ubicacion,
+        google_maps:
+          googleMaps,
+      },
+
+      {
+        headers: {
+
+          apikey:
+            process.env.SUPABASE_SERVICE_KEY,
+
+          Authorization:
+            `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+
+          "Content-Type":
+            "application/json",
+
+          Prefer:
+            "return=representation",
+        },
+      }
+    );
+
+    console.log(
+      "Ubicación actualizada ✅"
+    );
+
+  } catch (error) {
+
+    console.log(
+      "Error actualizando ubicación ❌"
     );
 
     console.log(
@@ -308,12 +403,6 @@ app.post("/webhook", async (req, res) => {
       ?.changes?.[0]
       ?.value?.messages?.[0];
 
-    /*
-    ========================================
-    EVITAR DUPLICADOS
-    ========================================
-    */
-
     if (!message) {
 
       return res.sendStatus(200);
@@ -355,24 +444,18 @@ app.post("/webhook", async (req, res) => {
         analisis
       );
 
-      /*
-      ========================================
-      GUARDAR INCIDENTE
-      ========================================
-      */
+      const incidente =
+        await guardarIncidente(
+          from,
+          text,
+          analisis.tipo_delito,
+          analisis.prioridad
+        );
 
-      await guardarIncidente(
-        from,
-        text,
-        analisis.tipo_delito,
-        analisis.prioridad
-      );
+      if (!incidente) {
 
-      /*
-      ========================================
-      RESPUESTA WHATSAPP
-      ========================================
-      */
+        return res.sendStatus(200);
+      }
 
       if (
         analisis.tipo_delito === "ninguno"
@@ -415,23 +498,38 @@ app.post("/webhook", async (req, res) => {
       const ubicacion =
         `${latitude}, ${longitude}`;
 
+      const googleMaps =
+        `https://maps.google.com/?q=${latitude},${longitude}`;
+
       console.log(
         "Ubicación:",
         ubicacion
       );
 
-      await guardarIncidente(
-        from,
-        "Ubicación recibida",
-        "ubicacion",
-        "alta",
-        ubicacion
+      const incidenteActivo =
+        await buscarIncidenteActivo(
+          from
+        );
+
+      if (!incidenteActivo) {
+
+        console.log(
+          "No existe incidente activo ❌"
+        );
+
+        return res.sendStatus(200);
+      }
+
+      await actualizarUbicacion(
+        incidenteActivo.id,
+        ubicacion,
+        googleMaps
       );
 
       await sendWhatsAppMessage(
         from,
 
-        `📍 Ubicación recibida correctamente.\n\n🚔 Las autoridades fueron notificadas.`
+        `📍 Ubicación recibida correctamente.\n\n🗺️ ${googleMaps}\n\n🚔 Las autoridades fueron notificadas.`
       );
 
       return res.sendStatus(200);
