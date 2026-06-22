@@ -502,9 +502,22 @@ if (
     message.image
   );
 
+  const incidente =
+    await guardarIncidente(
+      from,
+      "EVIDENCIA FOTOGRAFICA",
+      "evidencia",
+      "alta"
+    );
+
+  console.log(
+    "Incidente imagen:",
+    incidente
+  );
+
   await sendWhatsAppMessage(
     from,
-    "📷 Imagen recibida correctamente."
+    "📷 Imagen recibida.\n\n📍 Ahora envía tu ubicación para asociarla al caso."
   );
 
   return res.sendStatus(200);
