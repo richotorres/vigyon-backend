@@ -298,6 +298,111 @@ const actualizarUbicacion = async (
 
 /*
 ========================================
+ACTUALIZAR IMAGEN
+========================================
+*/
+
+const actualizarImagen = async (
+  incidenteId,
+  imagenUrl
+) => {
+
+  try {
+
+    await axios.patch(
+
+      `https://oszjlipttlqvyqwffrdc.supabase.co/rest/v1/incidentes?id=eq.${incidenteId}`,
+
+      {
+        imagen_url: imagenUrl
+      },
+
+      {
+        headers: {
+
+          apikey:
+            process.env.SUPABASE_SERVICE_KEY,
+
+          Authorization:
+            `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+
+          "Content-Type":
+            "application/json",
+
+          Prefer:
+            "return=representation",
+        },
+      }
+    );
+
+    console.log(
+      "Imagen actualizada ✅"
+    );
+
+  } catch (error) {
+
+    console.log(
+      "Error actualizando imagen ❌"
+    );
+
+    console.log(
+      error.response?.data ||
+      error.message
+    );
+  }
+};
+
+/*
+========================================
+DESCARGAR IMAGEN WHATSAPP
+========================================
+*/
+
+const descargarImagenWhatsApp = async (
+  mediaId
+) => {
+
+  try {
+
+    const mediaResponse =
+      await axios.get(
+
+        `https://graph.facebook.com/v20.0/${mediaId}`,
+
+        {
+          headers: {
+            Authorization:
+              `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          },
+        }
+      );
+
+    const imageUrl =
+      mediaResponse.data.url;
+
+    console.log(
+      "URL imagen obtenida ✅"
+    );
+
+    return imageUrl;
+
+  } catch (error) {
+
+    console.log(
+      "Error obteniendo imagen ❌"
+    );
+
+    console.log(
+      error.response?.data ||
+      error.message
+    );
+
+    return null;
+  }
+};
+
+/*
+========================================
 ANALIZAR EMERGENCIA CON IA
 ========================================
 */
