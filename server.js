@@ -403,6 +403,11 @@ app.post("/webhook", async (req, res) => {
       ?.changes?.[0]
       ?.value?.messages?.[0];
 
+      console.log(
+  "TIPO MENSAJE:",
+  message?.type
+);
+
     if (!message) {
 
       return res.sendStatus(200);
@@ -478,6 +483,32 @@ app.post("/webhook", async (req, res) => {
 
       return res.sendStatus(200);
     }
+
+    /*
+========================================
+IMAGEN
+========================================
+*/
+
+if (
+  message.type === "image"
+) {
+
+  console.log(
+    "Imagen recibida 📷"
+  );
+
+  console.log(
+    message.image
+  );
+
+  await sendWhatsAppMessage(
+    from,
+    "📷 Imagen recibida correctamente."
+  );
+
+  return res.sendStatus(200);
+}
 
     /*
     ========================================
