@@ -804,10 +804,6 @@ console.log(
       message.type === "text"
     ) {
 
-      throw new Error(
-  "PRUEBA GPT"
-);
-
       console.log(
   "ENTRO AL BLOQUE TEXT 🚀"
 );
