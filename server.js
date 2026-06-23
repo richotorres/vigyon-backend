@@ -432,7 +432,7 @@ const subirImagenSupabase = async (
 
     await axios.post(
 
-      `https://${process.env.SUPABASE_URL.replace("https://","")}/storage/v1/object/evidencias/${nombreArchivo}`,
+      `${process.env.SUPABASE_URL}/storage/v1/object/evidencias/${nombreArchivo}`,
 
       imageResponse.data,
 
@@ -719,15 +719,6 @@ try {
     "PRUEBA A 🚀"
   );
 
-  const imageUrl =
-    await descargarImagenWhatsApp(
-      message.image.id
-    );
-
-  console.log(
-    "PRUEBA B 🚀",
-    imageUrl
-  );
 
 } catch(error) {
 
@@ -741,17 +732,6 @@ try {
 
   console.log(
   "PRUEBA A 🚀"
-);
-
-  
-
-  const imageUrl =
-    await descargarImagenWhatsApp(
-      message.image.id
-    );
-    console.log(
-  "PRUEBA B 🚀",
-  imageUrl
 );
 
   if (
