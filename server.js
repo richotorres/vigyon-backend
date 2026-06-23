@@ -692,6 +692,20 @@ if (
   incidente
 );
 
+console.log(
+  "ENTRE A DESCARGA 🚀"
+);
+
+const imageUrl =
+  await descargarImagenWhatsApp(
+    message.image.id
+  );
+
+console.log(
+  "IMAGE URL:",
+  imageUrl
+);
+
 try {
 
   console.log(
