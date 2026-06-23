@@ -360,6 +360,56 @@ const actualizarImagen = async (
   }
 };
 
+const actualizarAudio = async (
+  incidenteId,
+  audioUrl
+) => {
+
+  try {
+
+    await axios.patch(
+
+      `https://oszjlipttlqvyqwffrdc.supabase.co/rest/v1/incidentes?id=eq.${incidenteId}`,
+
+      {
+        audio_url: audioUrl
+      },
+
+      {
+        headers: {
+
+          apikey:
+            process.env.SUPABASE_SERVICE_KEY,
+
+          Authorization:
+            `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+
+          "Content-Type":
+            "application/json",
+
+          Prefer:
+            "return=representation",
+        },
+      }
+    );
+
+    console.log(
+      "Audio actualizado ✅"
+    );
+
+  } catch (error) {
+
+    console.log(
+      "Error actualizando audio ❌"
+    );
+
+    console.log(
+      error.response?.data ||
+      error.message
+    );
+  }
+}; 
+
 /*
 ========================================
 DESCARGAR IMAGEN WHATSAPP
@@ -385,6 +435,7 @@ const descargarImagenWhatsApp = async (
         }
       );
 
+
     const imageUrl =
       mediaResponse.data.url;
 
@@ -398,6 +449,47 @@ const descargarImagenWhatsApp = async (
 
     console.log(
       "Error obteniendo imagen ❌"
+    );
+
+    console.log(
+      error.response?.data ||
+      error.message
+    );
+
+    return null;
+  }
+};
+
+const descargarAudioWhatsApp = async (
+  mediaId
+) => {
+
+  try {
+
+    const mediaResponse =
+      await axios.get(
+        `https://graph.facebook.com/v20.0/${mediaId}`,
+        {
+          headers: {
+            Authorization:
+              `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          },
+        }
+      );
+
+    const audioUrl =
+      mediaResponse.data.url;
+
+    console.log(
+      "URL audio obtenida ✅"
+    );
+
+    return audioUrl;
+
+  } catch (error) {
+
+    console.log(
+      "Error obteniendo audio ❌"
     );
 
     console.log(
@@ -474,6 +566,75 @@ const subirImagenSupabase = async (
     return null;
   }
 };
+
+const subirAudioSupabase = async (
+  audioUrl
+) => {
+
+  try {
+
+    const audioResponse =
+      await axios.get(
+        audioUrl,
+        {
+          responseType: "arraybuffer",
+          headers: {
+            Authorization:
+              `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          },
+        }
+      );
+
+    const nombreArchivo =
+      `audio_${Date.now()}.ogg`;
+
+    await axios.post(
+
+      `${process.env.SUPABASE_URL}/storage/v1/object/audios/${nombreArchivo}`,
+
+      audioResponse.data,
+
+      {
+        headers: {
+
+          apikey:
+            process.env.SUPABASE_SERVICE_KEY,
+
+          Authorization:
+            `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+
+          "Content-Type":
+            "audio/ogg",
+        },
+      }
+    );
+
+    const publicUrl =
+      `${process.env.SUPABASE_URL}/storage/v1/object/public/audios/${nombreArchivo}`;
+
+    console.log(
+      "Audio subido a Storage ✅"
+    );
+
+    return publicUrl;
+
+  } catch (error) {
+
+    console.log(
+      "Error subiendo audio ❌"
+    );
+
+    console.log(
+      error.response?.data ||
+      error.message
+    );
+
+    return null;
+  }
+};
+
+
+
 
 /*
 ========================================
@@ -599,6 +760,11 @@ app.post("/webhook", async (req, res) => {
 
     const from =
       message.from;
+
+      console.log(
+  "ANTES DE BLOQUES 🚀",
+  message.type
+);
 
     /*
     ========================================
@@ -766,6 +932,81 @@ try {
 
   return res.sendStatus(200);
 }
+
+/*
+====================================
+AUDIO
+====================================
+*/
+
+if (
+  message.type === "audio"
+) {
+
+  console.log(
+    "Audio recibido 🎤"
+  );
+
+  console.log(
+    message.audio
+  );
+
+  const incidente =
+    await guardarIncidente(
+      from,
+      "AUDIO RECIBIDO",
+      "audio",
+      "alta"
+    );
+
+  console.log(
+    "Incidente audio:",
+    incidente
+  );
+
+  const audioUrl =
+    await descargarAudioWhatsApp(
+      message.audio.id
+    );
+
+  console.log(
+    "AUDIO URL:",
+    audioUrl
+  );
+
+  if (
+    audioUrl &&
+    incidente
+  ) {
+
+    const publicUrl =
+      await subirAudioSupabase(
+        audioUrl
+      );
+
+    if (
+      publicUrl
+    ) {
+
+      await actualizarAudio(
+        incidente.id,
+        publicUrl
+      );
+
+      console.log(
+        "Audio asociado al incidente ✅"
+      );
+    }
+  }
+
+  await sendWhatsAppMessage(
+    from,
+    "🎤 Audio recibido.\n\n📍 Ahora envía tu ubicación para asociarla al caso."
+  );
+
+  return res.sendStatus(200);
+}
+
     /*
     ========================================
     UBICACION
