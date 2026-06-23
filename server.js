@@ -144,6 +144,13 @@ const guardarIncidente = async (
     const url =
       "https://oszjlipttlqvyqwffrdc.supabase.co/rest/v1/incidentes";
 
+
+      console.log(
+  "SUPABASE_URL:",
+  process.env.SUPABASE_URL
+);
+
+
     const response =
       await axios.post(
 
