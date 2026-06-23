@@ -757,15 +757,31 @@ app.post("/webhook", async (req, res) => {
 
       return res.sendStatus(200);
     }
+console.log(
+  "PASO 1 🚀"
+);
 
-    const from =
-      message.from;
+console.log(
+  "MESSAGE COMPLETO:",
+  JSON.stringify(message)
+);
 
-      console.log(
+console.log(
+  "PASO 2 🚀"
+);
+
+const from =
+  message.from;
+
+console.log(
+  "PASO 3 🚀",
+  from
+);
+
+console.log(
   "ANTES DE BLOQUES 🚀",
   message.type
 );
-
     /*
     ========================================
     MENSAJE TEXTO
