@@ -4,8 +4,20 @@ import cors from "cors";
 import axios from "axios";
 import FormData from "form-data";
 import OpenAI from "openai";
+import {
+  analizarConGPT
+} from "./ia-gpt.js";
 
 dotenv.config();
+
+console.log(
+  "🚨 SERVER MODIFICADO 999 🚨"
+);
+
+console.log(
+  "OPENAI KEY:",
+  process.env.OPENAI_API_KEY
+);
 
 const app = express();
 
@@ -792,8 +804,30 @@ console.log(
       message.type === "text"
     ) {
 
+      throw new Error(
+  "PRUEBA GPT"
+);
+
+      console.log(
+  "ENTRO AL BLOQUE TEXT 🚀"
+);
+
       const text =
         message.text?.body || "";
+
+        const resultadoGPT =
+  await analizarConGPT(text);
+
+  console.log(
+  "GPT FUNCION EJECUTADA 🚀"
+);
+
+console.log(
+  "GPT:",
+  resultadoGPT
+);
+
+//return res.sendStatus(200);
 
       console.log(
         "Mensaje de:",
