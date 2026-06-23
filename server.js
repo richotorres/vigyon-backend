@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import axios from "axios";
+import FormData from "form-data";
 import OpenAI from "openai";
 
 dotenv.config();
@@ -401,6 +402,72 @@ const descargarImagenWhatsApp = async (
   }
 };
 
+const subirImagenSupabase = async (
+  imageUrl
+) => {
+
+  try {
+
+    const imageResponse =
+      await axios.get(
+        imageUrl,
+        {
+          responseType: "arraybuffer",
+          headers: {
+            Authorization:
+              `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          },
+        }
+      );
+
+    const nombreArchivo =
+      `evidencia_${Date.now()}.jpg`;
+
+    await axios.post(
+
+      `https://${process.env.SUPABASE_URL.replace("https://","")}/storage/v1/object/evidencias/${nombreArchivo}`,
+
+      imageResponse.data,
+
+      {
+        headers: {
+
+          apikey:
+            process.env.SUPABASE_SERVICE_KEY,
+
+          Authorization:
+            `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+
+          "Content-Type":
+            "image/jpeg",
+        },
+      }
+    );
+
+    const publicUrl =
+      `${process.env.SUPABASE_URL}/storage/v1/object/public/evidencias/${nombreArchivo}`;
+
+    console.log(
+      "Imagen subida a Storage ✅"
+    );
+
+    return publicUrl;
+
+  } catch (error) {
+
+    console.log(
+      "Error subiendo imagen ❌"
+    );
+
+    console.log(
+      error.response?.data ||
+      error.message
+    );
+
+    return null;
+  }
+};
+
 /*
 ========================================
 ANALIZAR EMERGENCIA CON IA
@@ -484,6 +551,11 @@ Ejemplo:
   }
 };
 
+
+console.log("VERSION NUEVA CARGADA 🚀");
+console.log(
+  "VERSION IMAGEN STORAGE 777 🚀"
+);
 /*
 ========================================
 RECEIVE WHATSAPP MESSAGES
@@ -616,9 +688,75 @@ if (
     );
 
   console.log(
-    "Incidente imagen:",
-    incidente
+  "Incidente imagen:",
+  incidente
+);
+
+try {
+
+  console.log(
+    "PRUEBA A 🚀"
   );
+
+  const imageUrl =
+    await descargarImagenWhatsApp(
+      message.image.id
+    );
+
+  console.log(
+    "PRUEBA B 🚀",
+    imageUrl
+  );
+
+} catch(error) {
+
+  console.log(
+    "ERROR PRUEBA 🚨"
+  );
+
+  console.log(error);
+
+}
+
+  console.log(
+  "PRUEBA A 🚀"
+);
+
+  
+
+  const imageUrl =
+    await descargarImagenWhatsApp(
+      message.image.id
+    );
+    console.log(
+  "PRUEBA B 🚀",
+  imageUrl
+);
+
+  if (
+    imageUrl &&
+    incidente
+  ) {
+
+    const publicUrl =
+      await subirImagenSupabase(
+        imageUrl
+      );
+
+    if (
+      publicUrl
+    ) {
+
+      await actualizarImagen(
+        incidente.id,
+        publicUrl
+      );
+
+      console.log(
+        "Imagen asociada al incidente ✅"
+      );
+    }
+  }
 
   await sendWhatsAppMessage(
     from,
@@ -627,7 +765,6 @@ if (
 
   return res.sendStatus(200);
 }
-
     /*
     ========================================
     UBICACION
