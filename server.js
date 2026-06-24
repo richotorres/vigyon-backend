@@ -148,7 +148,10 @@ const guardarIncidente = async (
   telefono,
   mensaje,
   tipoDelito,
-  prioridad
+  prioridad,
+  categoriaGPT = null,
+  prioridadGPT = null,
+  confianzaGPT = null
 ) => {
 
   try {
@@ -165,17 +168,26 @@ const guardarIncidente = async (
 
     const response =
       await axios.post(
+  url,
+  {
+    telefono,
 
-        url,
+    mensaje,
 
-        {
-          telefono,
-          mensaje,
-          tipo_delito:
-            tipoDelito,
+    tipo_delito:
+      tipoDelito,
 
-          prioridad,
-        },
+    prioridad,
+
+    categoria_gpt:
+      categoriaGPT,
+
+    prioridad_gpt:
+      prioridadGPT,
+
+    confianza_gpt:
+      confianzaGPT
+  },
 
         {
           headers: {
@@ -846,12 +858,18 @@ console.log(
       );
 
       const incidente =
-        await guardarIncidente(
-          from,
-          text,
-          analisis.tipo_delito,
-          analisis.prioridad
-        );
+await guardarIncidente(
+  from,
+  text,
+  analisis.tipo_delito,
+  analisis.prioridad,
+
+  resultadoGPT.categoria,
+
+  resultadoGPT.prioridad,
+
+  resultadoGPT.confianza
+);
 
       if (!incidente) {
 
