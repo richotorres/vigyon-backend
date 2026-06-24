@@ -8,6 +8,10 @@ import {
   analizarConGPT
 } from "./ia-gpt.js";
 
+console.log(
+  "IMPORT GPT ACTIVO 999 🚀"
+);
+
 dotenv.config();
 
 console.log(
