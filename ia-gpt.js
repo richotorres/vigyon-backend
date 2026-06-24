@@ -9,6 +9,10 @@ const openai = new OpenAI({
 
 export async function analizarConGPT(texto) {
 
+    console.log(
+  "IA-GPT NUEVA VERSION 888 🚀"
+);
+
   try {
 
     const completion =
@@ -113,10 +117,20 @@ Solo devuelve JSON.
 
       });
 
-    return completion
+    const resultado =
+  JSON.parse(
+    completion
       .choices[0]
       .message
-      .content;
+      .content
+  );
+
+console.log(
+  "GPT PARSEADO:",
+  resultado
+);
+
+return resultado;
 
   } catch (error) {
 
