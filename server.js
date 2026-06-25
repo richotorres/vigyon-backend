@@ -881,22 +881,14 @@ console.log(
         text
       );
 
-      const analisis =
-        await analizarEmergencia(
-          text
-        );
-
-      console.log(
-        "Analisis IA:",
-        analisis
-      );
-
-      const incidente =
+     const incidente =
 await guardarIncidente(
   from,
   text,
-  analisis.tipo_delito,
-  analisis.prioridad,
+
+  resultadoGPT.categoria,
+
+  resultadoGPT.prioridad.toLowerCase(),
 
   resultadoGPT.categoria,
 
@@ -911,8 +903,8 @@ await guardarIncidente(
       }
 
       if (
-        analisis.tipo_delito === "ninguno"
-      ) {
+    resultadoGPT.categoria === "general"
+) {
 
         await sendWhatsAppMessage(
           from,
@@ -925,7 +917,7 @@ await guardarIncidente(
         await sendWhatsAppMessage(
           from,
 
-          `🚨 VIGYON IA detectó una posible emergencia.\n\nTipo: ${analisis.tipo_delito}\nPrioridad: ${analisis.prioridad}\n\n📍 Envía tu ubicación.\n🎤 Envía un audio corto.\n👮 Un operador revisará tu caso.`
+          `🚨 VIGYON IA detectó una posible emergencia.\n\nTipo: ${resultadoGPT.categoria}\nPrioridad: ${resultadoGPT.prioridad}\n\n📍 Envía tu ubicación.\n🎤 Envía un audio corto.\n👮 Un operador revisará tu caso.`
         );
       }
 
