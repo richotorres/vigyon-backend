@@ -13,12 +13,6 @@ import {
 
 dotenv.config();
 
-
-console.log(
-  "OPENAI KEY:",
-  process.env.OPENAI_API_KEY
-);
-
 const app = express();
 
 app.use(cors());
@@ -433,6 +427,76 @@ const actualizarAudio = async (
     );
   }
 }; 
+
+const actualizarAnalisisAudio = async (
+  incidenteId,
+  mensaje,
+  tipoDelito,
+  prioridad,
+  categoriaGPT,
+  prioridadGPT,
+  confianzaGPT
+) => {
+
+  try {
+
+    await axios.patch(
+
+      `${process.env.SUPABASE_URL}/rest/v1/incidentes?id=eq.${incidenteId}`,
+
+      {
+
+        mensaje,
+
+        tipo_delito: tipoDelito,
+
+        prioridad,
+
+        categoria_gpt: categoriaGPT,
+
+        prioridad_gpt: prioridadGPT,
+
+        confianza_gpt: confianzaGPT
+
+      },
+
+      {
+
+        headers: {
+
+          apikey:
+            process.env.SUPABASE_SERVICE_KEY,
+
+          Authorization:
+            `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+
+          "Content-Type":
+            "application/json"
+
+        }
+
+      }
+
+    );
+
+    console.log(
+      "Analisis del audio actualizado ✅"
+    );
+
+  } catch (error) {
+
+    console.log(
+      "ERROR ACTUALIZANDO ANALISIS ❌"
+    );
+
+    console.log(
+      error.response?.data ||
+      error.message
+    );
+
+  }
+
+};
 
 /*
 ========================================
@@ -1037,6 +1101,44 @@ if (
 console.log(
   "TEXTO AUDIO:",
   textoAudio
+);
+
+const resultadoGPT =
+await analizarConGPT(
+    textoAudio
+);
+
+console.log(
+    "GPT AUDIO:",
+    resultadoGPT
+);
+
+const analisis =
+await analizarEmergencia(
+    textoAudio
+);
+
+await actualizarAnalisisAudio(
+
+    incidente.id,
+
+    textoAudio,
+
+    analisis.tipo_delito,
+
+    analisis.prioridad,
+
+    resultadoGPT.categoria,
+
+    resultadoGPT.prioridad,
+
+    resultadoGPT.confianza
+
+);
+
+console.log(
+    "ANALISIS AUDIO:",
+    analisis
 );
 
       console.log(
