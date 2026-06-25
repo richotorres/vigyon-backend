@@ -795,7 +795,7 @@ const from =
         const resultadoGPT =
   await analizarConGPT(text);
 
-  console.log("=========== GPT AUDIO ===========");
+  console.log("ANÁLISIS GPT:");
 console.log(resultadoGPT);
 console.log("=================================");
 
@@ -1066,16 +1066,42 @@ console.log(
     resultadoGPT
 );
 
-      console.log(
-        "Audio asociado al incidente ✅"
-      );
+console.log(
+    "Audio asociado al incidente ✅"
+);
+
+if (
+    resultadoGPT.categoria === "general"
+) {
+
+    await sendWhatsAppMessage(
+
+        from,
+
+        `✅ Mensaje recibido.\n\nVIGYON IA no detectó una emergencia crítica.`
+
+    );
+
+} else {
+
+    await sendWhatsAppMessage(
+
+        from,
+
+        `🚨 VIGYON IA detectó una posible emergencia.\n\nTipo: ${resultadoGPT.categoria}\nPrioridad: ${resultadoGPT.prioridad}\n\n📍 Envía tu ubicación.\n👮 Un operador revisará tu caso.`
+
+    );
+
+}
     }
   }
 
+  /*
   await sendWhatsAppMessage(
     from,
     "🎤 Audio recibido.\n\n📍 Ahora envía tu ubicación para asociarla al caso."
   );
+  */
 
   return res.sendStatus(200);
 }
