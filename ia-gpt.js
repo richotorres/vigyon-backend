@@ -9,10 +9,6 @@ const openai = new OpenAI({
 
 export async function analizarConGPT(texto) {
 
-    console.log(
-  "IA-GPT NUEVA VERSION 888 🚀"
-);
-
   try {
 
     const completion =

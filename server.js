@@ -7,16 +7,12 @@ import OpenAI from "openai";
 import {
   analizarConGPT
 } from "./ia-gpt.js";
-
-console.log(
-  "IMPORT GPT ACTIVO 999 🚀"
-);
+import {
+  transcribirAudio
+} from "./whisper.js";
 
 dotenv.config();
 
-console.log(
-  "🚨 SERVER MODIFICADO 999 🚨"
-);
 
 console.log(
   "OPENAI KEY:",
@@ -530,7 +526,8 @@ const descargarAudioWhatsApp = async (
 };
 
 const subirImagenSupabase = async (
-  imageUrl
+  imageUrl,
+  incidenteId
 ) => {
 
   try {
@@ -548,7 +545,7 @@ const subirImagenSupabase = async (
       );
 
     const nombreArchivo =
-      `evidencia_${Date.now()}.jpg`;
+      `incidente_${incidenteId}_imagen.jpg`;
 
     await axios.post(
 
@@ -596,7 +593,8 @@ const subirImagenSupabase = async (
 };
 
 const subirAudioSupabase = async (
-  audioUrl
+  audioUrl,
+  incidenteId
 ) => {
 
   try {
@@ -614,7 +612,7 @@ const subirAudioSupabase = async (
       );
 
     const nombreArchivo =
-      `audio_${Date.now()}.ogg`;
+  `incidente_${incidenteId}_audio.ogg`;
 
     await axios.post(
 
@@ -748,10 +746,6 @@ Ejemplo:
 };
 
 
-console.log("VERSION NUEVA CARGADA 🚀");
-console.log(
-  "VERSION IMAGEN STORAGE 777 🚀"
-);
 /*
 ========================================
 RECEIVE WHATSAPP MESSAGES
@@ -776,40 +770,19 @@ app.post("/webhook", async (req, res) => {
       ?.changes?.[0]
       ?.value?.messages?.[0];
 
-      console.log(
-  "TIPO MENSAJE:",
-  message?.type
-);
-
     if (!message) {
 
       return res.sendStatus(200);
     }
-console.log(
-  "PASO 1 🚀"
-);
 
 console.log(
   "MESSAGE COMPLETO:",
   JSON.stringify(message)
 );
 
-console.log(
-  "PASO 2 🚀"
-);
-
 const from =
   message.from;
 
-console.log(
-  "PASO 3 🚀",
-  from
-);
-
-console.log(
-  "ANTES DE BLOQUES 🚀",
-  message.type
-);
     /*
     ========================================
     MENSAJE TEXTO
@@ -820,19 +793,12 @@ console.log(
       message.type === "text"
     ) {
 
-      console.log(
-  "ENTRO AL BLOQUE TEXT 🚀"
-);
-
       const text =
         message.text?.body || "";
 
         const resultadoGPT =
   await analizarConGPT(text);
 
-  console.log(
-  "GPT FUNCION EJECUTADA 🚀"
-);
 
 console.log(
   "GPT:",
@@ -974,9 +940,10 @@ try {
   ) {
 
     const publicUrl =
-      await subirImagenSupabase(
-        imageUrl
-      );
+  await subirImagenSupabase(
+    imageUrl,
+    incidente.id
+  );
 
     if (
       publicUrl
@@ -1049,7 +1016,8 @@ if (
 
     const publicUrl =
       await subirAudioSupabase(
-        audioUrl
+        audioUrl,
+        incidente.id
       );
 
     if (
@@ -1060,6 +1028,16 @@ if (
         incidente.id,
         publicUrl
       );
+
+      const textoAudio =
+  await transcribirAudio(
+    audioUrl
+  );
+
+console.log(
+  "TEXTO AUDIO:",
+  textoAudio
+);
 
       console.log(
         "Audio asociado al incidente ✅"
