@@ -749,18 +749,21 @@ app.post("/webhook", async (req, res) => {
       ?.changes?.[0]
       ?.value?.messages?.[0];
 
+      if (!message) {
+
+  console.log("Webhook de estado recibido.");
+
+  return res.sendStatus(200);
+
+}
+
       console.log("================================");
 console.log("MESSAGE ID:", message?.id);
 console.log("TYPE:", message?.type);
 console.log("FROM:", message?.from);
 console.log("================================");
 
-    if (!message) {
-
-      return res.sendStatus(200);
-    }
-
-    if (await mensajeYaProcesado(message.id)) {
+      if (await mensajeYaProcesado(message.id)) {
 
   console.log("🚫 Mensaje duplicado ignorado:", message.id);
 
