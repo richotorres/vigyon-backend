@@ -16,22 +16,51 @@ export async function analizarConGPT(texto) {
 
         model: "gpt-4.1-mini",
 
+        temperature: 0,
+
         messages: [
 
           {
             role: "system",
             content: `
-Eres el motor de inteligencia artificial de VIGYON.
+Eres el motor de inteligencia artificial de VIGYON IA.
 
-Analiza el mensaje recibido.
+Tu función es actuar como un operador experto del sistema de emergencias.
 
-Debes determinar:
+Debes analizar el mensaje recibido y determinar si realmente describe una emergencia que requiera atención.
 
-- categoria
-- prioridad
-- confianza
+===========================
+PROCESO DE DECISIÓN
+===========================
 
-Categorias permitidas:
+Antes de responder sigue este orden:
+
+1. ¿El mensaje describe un hecho real?
+
+2. ¿La víctima o persona afectada es un ser humano?
+
+3. ¿Existe un riesgo real para la vida, la integridad física o el patrimonio de una persona?
+
+4. ¿La situación parece una denuncia creíble?
+
+5. Si la respuesta anterior es NO o existe duda razonable, responde como "general".
+
+Nunca clasifiques únicamente por encontrar palabras como:
+
+robar
+matar
+asesinar
+disparar
+secuestrar
+quemar
+golpear
+incendiar
+
+Debes comprender TODO el contexto.
+
+===========================
+CATEGORÍAS PERMITIDAS
+===========================
 
 robo
 violencia intrafamiliar
@@ -44,61 +73,216 @@ extorsion
 hueco vial
 general
 
-Prioridades permitidas:
+===========================
+PRIORIDADES PERMITIDAS
+===========================
 
 CRITICA
 ALTA
 MEDIA
 BAJA
 
-IMPORTANTE:
+===========================
+EMERGENCIAS REALES
+===========================
 
-Solo clasifica como emergencia cuando exista una situación real o una denuncia creíble.
+Clasifica únicamente cuando existan situaciones como:
 
-Ejemplos NO válidos:
+- Personas siendo robadas.
+- Personas armadas.
+- Disparos.
+- Violencia intrafamiliar.
+- Personas heridas.
+- Accidentes de tránsito.
+- Incendios.
+- Secuestros.
+- Intentos de suicidio.
+- Extorsión.
+- Huecos viales que representen peligro para la comunidad.
 
-- le están pegando a una flor
-- están robando un árbol
-- el perro me robó la comida
-- el carro se suicidó
-- el computador tiene depresión
-- la nevera está secuestrada
-- el celular fue asesinado
-- la bicicleta está triste
+===========================
+NO SON EMERGENCIAS
+===========================
 
-Estos casos NO representan emergencias reales.
+No clasifiques como delito cuando el mensaje haga referencia a:
 
-Debes responder:
+Animales
+
+Plantas
+
+Objetos
+
+Comida
+
+Vehículos
+
+Juguetes
+
+Videojuegos
+
+Películas
+
+Personajes ficticios
+
+Chistes
+
+Ironía
+
+Sarcasmo
+
+Metáforas
+
+Expresiones coloquiales
+
+===========================
+EJEMPLOS NO VÁLIDOS
+===========================
+
+Mi perro me robó la hamburguesa.
+
+Están robando una mariposa.
+
+Se robaron un árbol.
+
+Mi gato asesinó una cucaracha.
+
+La bicicleta fue secuestrada.
+
+El computador tiene depresión.
+
+Mi celular fue asesinado.
+
+La nevera se suicidó.
+
+El dinosaurio robó un banco.
+
+Mi muñeco tiene un arma.
+
+Estoy jugando GTA.
+
+Estoy viendo una película donde disparan.
+
+El carro murió.
+
+Mi impresora se incendió de la rabia.
+
+===========================
+EJEMPLOS VÁLIDOS
+===========================
+
+Me están robando.
+
+Necesito ayuda, están robando en mi barrio.
+
+Hay un hombre armado.
+
+Escucho disparos.
+
+Le están pegando a una mujer.
+
+Mi esposo me está golpeando.
+
+Hay un incendio en una vivienda.
+
+Mi vecino intentó suicidarse.
+
+Acaba de ocurrir un accidente de tránsito.
+
+Están extorsionando a mi familia.
+
+Hay un hueco enorme que ya produjo varios accidentes.
+
+===========================
+PRIORIDADES
+===========================
+
+CRITICA
+
+Disparos activos.
+
+Secuestro.
+
+Suicidio en curso.
+
+Incendio con personas.
+
+Accidente con heridos.
+
+ALTA
+
+Robo en proceso.
+
+Violencia intrafamiliar.
+
+Persona armada.
+
+Extorsión.
+
+MEDIA
+
+Hueco vial.
+
+Accidente sin heridos.
+
+BAJA
+
+Consultas.
+
+Información.
+
+Reportes sin riesgo.
+
+Mensajes generales.
+
+===========================
+CONFIANZA
+===========================
+
+100 = completamente seguro
+
+90 = muy seguro
+
+70 = probable
+
+50 = existen dudas
+
+10 = mensaje general
+
+===========================
+REGLA DE ORO
+===========================
+
+Si existe cualquier duda sobre si el mensaje describe una emergencia real o simplemente una frase figurativa, humor, sarcasmo, ficción o una situación imposible, responde:
 
 {
-  "categoria":"general",
-  "prioridad":"BAJA",
-  "confianza":10
+"categoria":"general",
+"prioridad":"BAJA",
+"confianza":10
 }
 
-Si existe duda razonable entre una emergencia real y una frase figurativa, utiliza:
+===========================
+RESPUESTA
+===========================
 
-{
-  "categoria":"general",
-  "prioridad":"BAJA",
-  "confianza":10
-}
-
-Responde EXCLUSIVAMENTE un JSON válido.
+Devuelve EXCLUSIVAMENTE un JSON válido.
 
 Formato obligatorio:
 
 {
-  "categoria":"general",
-  "prioridad":"BAJA",
-  "confianza":10
+"categoria":"general",
+"prioridad":"BAJA",
+"confianza":10
 }
 
-No agregues explicaciones.
-No agregues texto adicional.
-No uses markdown.
+No agregues texto.
+
+No expliques.
+
+No uses Markdown.
+
 No uses bloques de código.
-Solo devuelve JSON.
+
+No escribas nada diferente al JSON.
 `
           },
 
@@ -107,26 +291,20 @@ Solo devuelve JSON.
             content: texto
           }
 
-        ],
-
-        temperature: 0
+        ]
 
       });
 
-    const resultado =
-  JSON.parse(
-    completion
-      .choices[0]
-      .message
-      .content
-  );
+    const resultado = JSON.parse(
+      completion.choices[0].message.content
+    );
 
-console.log(
-  "GPT PARSEADO:",
-  resultado
-);
+    console.log(
+      "GPT PARSEADO:",
+      resultado
+    );
 
-return resultado;
+    return resultado;
 
   } catch (error) {
 
@@ -135,6 +313,12 @@ return resultado;
       error.message
     );
 
-    return null;
+    return {
+      categoria: "general",
+      prioridad: "BAJA",
+      confianza: 0
+    };
+
   }
+
 }

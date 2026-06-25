@@ -3,13 +3,15 @@ import dotenv from "dotenv";
 import cors from "cors";
 import axios from "axios";
 import FormData from "form-data";
-import OpenAI from "openai";
 import {
   analizarConGPT
 } from "./ia-gpt.js";
 import {
   transcribirAudio
 } from "./whisper.js";
+import {
+  mensajeYaProcesado
+} from "./mensajes.js";
 
 dotenv.config();
 
@@ -17,10 +19,6 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 /*
 ========================================
@@ -723,93 +721,6 @@ const subirAudioSupabase = async (
   }
 };
 
-
-
-
-/*
-========================================
-ANALIZAR EMERGENCIA CON IA
-========================================
-*/
-
-const analizarEmergencia = async (
-  mensaje
-) => {
-
-  try {
-
-    const completion =
-      await openai.chat.completions.create({
-
-        model: "gpt-4.1-mini",
-
-        response_format: {
-          type: "json_object",
-        },
-
-        messages: [
-          {
-            role: "system",
-
-            content: `
-Eres una IA de emergencias de Colombia.
-
-Debes detectar:
-- tipo_delito
-- prioridad
-
-Prioridades:
-- baja
-- media
-- alta
-
-Si NO es una emergencia real:
-- tipo_delito = "ninguno"
-- prioridad = "baja"
-
-Responde SOLO en JSON.
-
-Ejemplo:
-{
-  "tipo_delito": "atraco",
-  "prioridad": "alta"
-}
-`,
-          },
-
-          {
-            role: "user",
-            content: mensaje,
-          },
-        ],
-      });
-
-    return JSON.parse(
-      completion
-        .choices[0]
-        .message
-        .content
-    );
-
-  } catch (error) {
-
-    console.log(
-      "Error OpenAI:",
-      error.response?.data ||
-      error.message
-    );
-
-    return {
-      tipo_delito:
-        "desconocido",
-
-      prioridad:
-        "media",
-    };
-  }
-};
-
-
 /*
 ========================================
 RECEIVE WHATSAPP MESSAGES
@@ -819,6 +730,9 @@ RECEIVE WHATSAPP MESSAGES
 app.post("/webhook", async (req, res) => {
 
   try {
+        console.log(
+"NUEVO WEBHOOK"
+);
 
     console.log(
       "Mensaje recibido:",
@@ -829,15 +743,30 @@ app.post("/webhook", async (req, res) => {
       )
     );
 
+
     const message =
       req.body?.entry?.[0]
       ?.changes?.[0]
       ?.value?.messages?.[0];
 
+      console.log("================================");
+console.log("MESSAGE ID:", message?.id);
+console.log("TYPE:", message?.type);
+console.log("FROM:", message?.from);
+console.log("================================");
+
     if (!message) {
 
       return res.sendStatus(200);
     }
+
+    if (await mensajeYaProcesado(message.id)) {
+
+  console.log("🚫 Mensaje duplicado ignorado:", message.id);
+
+  return res.sendStatus(200);
+
+}
 
 console.log(
   "MESSAGE COMPLETO:",
@@ -862,6 +791,10 @@ const from =
 
         const resultadoGPT =
   await analizarConGPT(text);
+
+  console.log("=========== GPT AUDIO ===========");
+console.log(resultadoGPT);
+console.log("=================================");
 
 
 console.log(
@@ -1100,15 +1033,12 @@ await analizarConGPT(
     textoAudio
 );
 
-console.log(
-    "GPT AUDIO:",
-    resultadoGPT
-);
-
-const analisis =
-await analizarEmergencia(
-    textoAudio
-);
+console.log("Datos que voy a guardar:");
+console.log({
+  categoria: resultadoGPT.categoria,
+  prioridad: resultadoGPT.prioridad,
+  confianza: resultadoGPT.confianza
+});
 
 await actualizarAnalisisAudio(
 
@@ -1116,9 +1046,9 @@ await actualizarAnalisisAudio(
 
     textoAudio,
 
-    analisis.tipo_delito,
+    resultadoGPT.categoria,
 
-    analisis.prioridad,
+    resultadoGPT.prioridad.toLowerCase(),
 
     resultadoGPT.categoria,
 
@@ -1129,8 +1059,8 @@ await actualizarAnalisisAudio(
 );
 
 console.log(
-    "ANALISIS AUDIO:",
-    analisis
+    "GPT AUDIO:",
+    resultadoGPT
 );
 
       console.log(
