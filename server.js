@@ -116,9 +116,9 @@ const sendWhatsAppMessage = async (
       },
     });
 
-    console.log(
-      "Mensaje enviado correctamente ✅"
-    );
+   console.log("========== WHATSAPP ==========");
+console.log(message);
+console.log("==============================");
 
   } catch (error) {
 
