@@ -86,6 +86,7 @@ async function procesarImagenWhatsApp(rutaImagen) {
 
 }
 
+
 async function guardarEvidencia(
     incidenteId,
     tipo,

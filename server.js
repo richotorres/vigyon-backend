@@ -18,6 +18,8 @@ import {
     guardarEvidencia
 } from "./evidencias.js";
 
+import fs from "fs";
+
 dotenv.config();
 
 const app = express();
@@ -817,45 +819,23 @@ await guardarIncidente(
       return res.sendStatus(200);
     }
 
-
     /*
 ========================================
 IMAGEN
 ========================================
 */
 
-if (message.type === "image") {
+ if (message.type === "image") {
 
-    console.log("📷 Imagen recibida");
+  console.log("🔥🔥🔥 VERSION NUEVA DEL BLOQUE IMAGE 🔥🔥🔥");
 
-    console.log(message.image);
+  console.log(
+    "Imagen recibida 📷"
+  );
 
-    const mediaId = message.image.id;
-
-    console.log("MEDIA ID:", mediaId);
-
-    const rutaImagen =
-        await descargarImagenWhatsApp(mediaId);
-
-    console.log("Ruta local:", rutaImagen);
-
-    return res.sendStatus(200);
-}
-
-    /*
-========================================
-IMAGEN
-========================================
-*/
-
-  if (message.type === "image") {
-
-    console.log("XXXXXXXXXXXX V8 XXXXXXXX");
-
-    console.log(
-        "Imagen recibida 📷"
-    );
-
+  console.log(
+    message.image
+  );
 
   console.log(
     "Imagen recibida 📷"
@@ -882,10 +862,23 @@ console.log(
   "ENTRE A DESCARGA 🚀"
 );
 
-const imageUrl =
-  await descargarImagenWhatsApp(
-    message.image.id
-  );
+let imageUrl;
+
+try {
+
+    imageUrl = await descargarImagenWhatsApp(
+        message.image.id
+    );
+
+    console.log("✅ PASÓ descargarImagenWhatsApp");
+    console.log(imageUrl);
+
+} catch (error) {
+
+    console.error("🔥 ERROR EN descargarImagenWhatsApp");
+    console.error(error);
+
+}
 
 console.log(
   "IMAGE URL:",
@@ -944,19 +937,27 @@ console.log("===========================");
 
       console.log("🚀🚀🚀 ENTRE A GUARDAR EVIDENCIA 🚀🚀🚀");
 
-      await guardarEvidencia(
+      try {
 
-    incidente.id,
+    console.log("🚀 Entrando a guardarEvidencia...");
 
-    "imagen",
+    const evidencia = await guardarEvidencia(
+        incidente.id,
+        "imagen",
+        `incidente_${incidente.id}_imagen.jpg`,
+        publicUrl,
+        "image/jpeg"
+    );
 
-    `incidente_${incidente.id}_imagen.jpg`,
+    console.log("✅ guardarEvidencia terminó");
+    console.log(evidencia);
 
-    publicUrl,
+} catch (error) {
 
-    "image/jpeg"
+    console.error("❌ ERROR EN guardarEvidencia");
+    console.error(error);
 
-);
+}
 
 console.log(
     "✅ Evidencia registrada en la tabla evidencias"
