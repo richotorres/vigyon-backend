@@ -12,6 +12,11 @@ import {
 import {
   mensajeYaProcesado
 } from "./mensajes.js";
+import {
+    descargarImagenWhatsApp,
+    procesarImagenWhatsApp,
+    guardarEvidencia
+} from "./evidencias.js";
 
 dotenv.config();
 
@@ -496,55 +501,7 @@ const actualizarAnalisisAudio = async (
 
 };
 
-/*
-========================================
-DESCARGAR IMAGEN WHATSAPP
-========================================
-*/
 
-const descargarImagenWhatsApp = async (
-  mediaId
-) => {
-
-  try {
-
-    const mediaResponse =
-      await axios.get(
-
-        `https://graph.facebook.com/v20.0/${mediaId}`,
-
-        {
-          headers: {
-            Authorization:
-              `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          },
-        }
-      );
-
-
-    const imageUrl =
-      mediaResponse.data.url;
-
-    console.log(
-      "URL imagen obtenida ✅"
-    );
-
-    return imageUrl;
-
-  } catch (error) {
-
-    console.log(
-      "Error obteniendo imagen ❌"
-    );
-
-    console.log(
-      error.response?.data ||
-      error.message
-    );
-
-    return null;
-  }
-};
 
 const descargarAudioWhatsApp = async (
   mediaId
@@ -860,15 +817,45 @@ await guardarIncidente(
       return res.sendStatus(200);
     }
 
+
     /*
 ========================================
 IMAGEN
 ========================================
 */
 
-if (
-  message.type === "image"
-) {
+if (message.type === "image") {
+
+    console.log("📷 Imagen recibida");
+
+    console.log(message.image);
+
+    const mediaId = message.image.id;
+
+    console.log("MEDIA ID:", mediaId);
+
+    const rutaImagen =
+        await descargarImagenWhatsApp(mediaId);
+
+    console.log("Ruta local:", rutaImagen);
+
+    return res.sendStatus(200);
+}
+
+    /*
+========================================
+IMAGEN
+========================================
+*/
+
+  if (message.type === "image") {
+
+    console.log("XXXXXXXXXXXX V8 XXXXXXXX");
+
+    console.log(
+        "Imagen recibida 📷"
+    );
+
 
   console.log(
     "Imagen recibida 📷"
@@ -937,6 +924,11 @@ try {
     incidente.id
   );
 
+  console.log("========== DEBUG ==========");
+console.log("publicUrl:", publicUrl);
+console.log("typeof:", typeof publicUrl);
+console.log("===========================");
+
     if (
       publicUrl
     ) {
@@ -949,6 +941,28 @@ try {
       console.log(
         "Imagen asociada al incidente ✅"
       );
+
+      console.log("🚀🚀🚀 ENTRE A GUARDAR EVIDENCIA 🚀🚀🚀");
+
+      await guardarEvidencia(
+
+    incidente.id,
+
+    "imagen",
+
+    `incidente_${incidente.id}_imagen.jpg`,
+
+    publicUrl,
+
+    "image/jpeg"
+
+);
+
+console.log(
+    "✅ Evidencia registrada en la tabla evidencias"
+);
+
+
     }
   }
 
