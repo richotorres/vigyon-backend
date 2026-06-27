@@ -102,11 +102,11 @@ async function guardarEvidencia(
         {
             method: "POST",
             headers: {
-                apikey: process.env.SUPABASE_KEY,
-                Authorization: `Bearer ${process.env.SUPABASE_KEY}`,
-                "Content-Type": "application/json",
-                Prefer: "return=representation"
-            },
+    apikey: process.env.SUPABASE_SERVICE_KEY,
+    Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+    "Content-Type": "application/json",
+    Prefer: "return=representation"
+},
             body: JSON.stringify({
                 incidente_id: incidenteId,
                 tipo,
