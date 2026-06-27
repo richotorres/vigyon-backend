@@ -554,25 +554,16 @@ const subirImagenSupabase = async (
   try {
 
     const imageResponse =
-      await axios.get(
-        imageUrl,
-        {
-          responseType: "arraybuffer",
-          headers: {
-            Authorization:
-              `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          },
-        }
-      );
+  fs.readFileSync(imageUrl);
 
     const nombreArchivo =
       `incidente_${incidenteId}_imagen.jpg`;
 
-    await axios.post(
+   await axios.post(
 
-      `${process.env.SUPABASE_URL}/storage/v1/object/evidencias/${nombreArchivo}`,
+  `${process.env.SUPABASE_URL}/storage/v1/object/evidencias/${nombreArchivo}`,
 
-      imageResponse.data,
+  imageResponse,
 
       {
         headers: {
