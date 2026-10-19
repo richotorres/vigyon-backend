@@ -1,92 +1,90 @@
 import axios from "axios";
 import fs from "fs";
 import path from "path";
-import OpenAI from "openai";
-import { fileURLToPath } from "url";
+import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
-
+/**
+ * Descarga una imagen desde WhatsApp y la guarda temporalmente.
+ * Devuelve la ruta local del archivo.
+ */
 async function descargarImagenWhatsApp(mediaId) {
-
     try {
+        const token = process.env.WHATSAPP_TOKEN;
 
-        console.log("📷 Descargando imagen:", mediaId);
+        if (!token) {
+            throw new Error("Falta la variable WHATSAPP_TOKEN.");
+        }
 
-        // Obtener URL temporal desde Meta
+        if (!mediaId) {
+            throw new Error("No se recibió el ID de la imagen.");
+        }
+
+        console.log("Descargando imagen de WhatsApp:", mediaId);
+
         const mediaResponse = await axios.get(
             `https://graph.facebook.com/v23.0/${mediaId}`,
             {
                 headers: {
-                    Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+                    Authorization: `Bearer ${token}`,
                 },
             }
         );
 
-        const mediaUrl = mediaResponse.data.url;
+        const mediaUrl = mediaResponse.data?.url;
 
-        console.log("✅ URL obtenida");
+        if (!mediaUrl) {
+            throw new Error("Meta no devolvió la URL de la imagen.");
+        }
 
-        // Descargar imagen
         const imagen = await axios.get(mediaUrl, {
             responseType: "arraybuffer",
             headers: {
-                Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+                Authorization: `Bearer ${token}`,
             },
         });
 
-        // Crear carpeta temporal
         const carpeta = path.join(__dirname, "temp");
 
-        if (!fs.existsSync(carpeta)) {
-            fs.mkdirSync(carpeta);
-        }
+        fs.mkdirSync(carpeta, { recursive: true });
 
-        // Guardar imagen
-        const nombreArchivo = `${Date.now()}.jpg`;
+        // Nombre único para evitar conflictos entre archivos.
+        const nombreArchivo =
+            `imagen_${Date.now()}_${randomUUID()}.jpg`;
 
         const ruta = path.join(carpeta, nombreArchivo);
 
-        fs.writeFileSync(ruta, imagen.data);
+        fs.writeFileSync(ruta, Buffer.from(imagen.data));
 
-        console.log("✅ Imagen guardada:", ruta);
+        console.log("Imagen descargada correctamente:", ruta);
 
         return ruta;
-
     } catch (error) {
-
-        console.error("❌ Error descargando imagen");
-
         console.error(
+            "Error descargando imagen de WhatsApp:",
             error.response?.data || error.message
         );
 
-        return null;
-
+        throw error;
     }
-
 }
 
-async function procesarImagenWhatsApp(rutaImagen) {
-
-    console.log("📷 Procesando imagen:", rutaImagen);
-
-    // Aquí implementaremos GPT Vision
-    return {
-        categoria: "general",
-        prioridad: "BAJA",
-        confianza: 0,
-        descripcion: "",
-        analisis: {}
-    };
-
+/**
+ * La función se conserva para mantener la importación actual.
+ * El análisis de imágenes con IA se implementará por separado.
+ */
+async function procesarImagenWhatsApp() {
+    throw new Error(
+        "El análisis de imágenes con IA todavía no está implementado."
+    );
 }
 
-
+/**
+ * Registra una evidencia ya subida a Supabase Storage.
+ */
 async function guardarEvidencia(
     incidenteId,
     tipo,
@@ -94,40 +92,68 @@ async function guardarEvidencia(
     storageUrl,
     mimeType
 ) {
+    try {
+        const supabaseUrl =
+            process.env.SUPABASE_URL?.replace(/\/+$/, "");
 
-    console.log("📁 Guardando evidencia...");
+        const serviceKey = process.env.SUPABASE_SERVICE_KEY;
 
-    const response = await fetch(
-        `${process.env.SUPABASE_URL}/rest/v1/evidencias`,
-        {
-            method: "POST",
-            headers: {
-    apikey: process.env.SUPABASE_SERVICE_KEY,
-    Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
-    "Content-Type": "application/json",
-    Prefer: "return=representation"
-},
-            body: JSON.stringify({
+        if (!supabaseUrl || !serviceKey) {
+            throw new Error(
+                "Falta SUPABASE_URL o SUPABASE_SERVICE_KEY."
+            );
+        }
+
+        if (
+            !incidenteId ||
+            !tipo ||
+            !storagePath ||
+            !storageUrl ||
+            !mimeType
+        ) {
+            throw new Error(
+                "Faltan datos obligatorios para registrar la evidencia."
+            );
+        }
+
+        const response = await axios.post(
+            `${supabaseUrl}/rest/v1/evidencias`,
+            {
                 incidente_id: incidenteId,
                 tipo,
                 storage_path: storagePath,
                 storage_url: storageUrl,
-                mime_type: mimeType
-            })
-        }
-    );
+                mime_type: mimeType,
+            },
+            {
+                headers: {
+                    apikey: serviceKey,
+                    Authorization: `Bearer ${serviceKey}`,
+                    "Content-Type": "application/json",
+                    Prefer: "return=representation",
+                },
+            }
+        );
 
-    const data = await response.json();
+        const registro = Array.isArray(response.data)
+            ? response.data[0]
+            : response.data;
 
-    console.log("✅ Evidencia guardada");
+        console.log("Evidencia registrada correctamente:", registro);
 
-    console.log(data);
+        return registro;
+    } catch (error) {
+        console.error(
+            "Error registrando evidencia en Supabase:",
+            error.response?.data || error.message
+        );
 
-    return data;
+        throw error;
+    }
 }
 
 export {
     descargarImagenWhatsApp,
     procesarImagenWhatsApp,
-    guardarEvidencia
+    guardarEvidencia,
 };

@@ -2,9 +2,9 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import axios from "axios";
-import FormData from "form-data";
 import {
-  analizarConGPT
+  analizarConGPT,
+  analizarImagenConGPT
 } from "./ia-gpt.js";
 import {
   transcribirAudio
@@ -13,14 +13,26 @@ import {
   mensajeYaProcesado
 } from "./mensajes.js";
 import {
-    descargarImagenWhatsApp,
-    procesarImagenWhatsApp,
-    guardarEvidencia
+  descargarImagenWhatsApp,
+  guardarEvidencia
 } from "./evidencias.js";
 
 import fs from "fs";
+import { randomUUID } from "node:crypto";
 
 dotenv.config();
+
+// Mantiene el proyecto de Supabase actual como respaldo, pero prefiere la variable de entorno.
+const SUPABASE_URL_BASE = (
+  process.env.SUPABASE_URL ||
+  "https://oszjlipttlqvyqwffrdc.supabase.co"
+).replace(/\/+$/, "");
+const SUPABASE_REST_URL = `${SUPABASE_URL_BASE}/rest/v1`;
+
+// Selección temporal por teléfono cuando el remitente tiene varios casos abiertos.
+// Persiste mientras este proceso del backend esté en ejecución.
+const seleccionCasoPorTelefono = new Map();
+const VENTANA_ASOCIACION_EVIDENCIAS_MS = 24 * 60 * 60 * 1000;
 
 const app = express();
 
@@ -155,14 +167,8 @@ const guardarIncidente = async (
 
   try {
 
-    const url =
-      "https://oszjlipttlqvyqwffrdc.supabase.co/rest/v1/incidentes";
+    const url = `${SUPABASE_REST_URL}/incidentes`;
 
-
-      console.log(
-  "SUPABASE_URL:",
-  process.env.SUPABASE_URL
-);
 
 
     const response =
@@ -229,43 +235,162 @@ const guardarIncidente = async (
 
 /*
 ========================================
-BUSCAR INCIDENTE ACTIVO
+BUSCAR INCIDENTES ABIERTOS / ASOCIACION
 ========================================
 */
 
-const buscarIncidenteActivo = async (
-  telefono
-) => {
+const normalizarValor = (valor) =>
+  String(valor ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
 
+const confianzaComoNumero = (valor) => {
+  if (valor === null || valor === undefined || valor === "") return null;
+
+  const texto = normalizarValor(valor);
+  if (["alta", "alto", "high", "alta confianza", "high confidence"].includes(texto)) return 0.9;
+  if (["media", "medio", "medium", "confianza media"].includes(texto)) return 0.65;
+  if (["baja", "bajo", "low", "baja confianza", "low confidence"].includes(texto)) return 0.3;
+
+  const esPorcentaje = typeof valor === "string" && valor.includes("%");
+  const numero = Number(String(valor).replace("%", "").trim());
+  if (!Number.isFinite(numero) || numero < 0) return null;
+  // Admite 0.92, 92 y "92%", según el formato del clasificador.
+  if (esPorcentaje || (numero > 1 && numero <= 100)) return numero / 100;
+  return numero;
+};
+
+const estadosCerrados = new Set([
+  "resuelto",
+  "resuelta",
+  "cerrado",
+  "cerrada",
+  "finalizado",
+  "finalizada",
+  "completado",
+  "completada",
+  "closed",
+  "resolved",
+  "completed",
+  "cancelado",
+  "cancelada",
+  "cancelled",
+  "canceled",
+  "descartado",
+  "descartada"
+]);
+
+const incidenteEstaCerrado = (incidente) =>
+  estadosCerrados.has(normalizarValor(incidente?.estado));
+
+const incidenteEsGeneral = (incidente) =>
+  normalizarValor(incidente?.categoria_gpt) === "general" ||
+  normalizarValor(incidente?.tipo_delito) === "general";
+
+const incidenteEsReciente = (incidente) => {
+  if (!incidente?.created_at) return true;
+
+  const fecha = Date.parse(incidente.created_at);
+  if (!Number.isFinite(fecha)) return true;
+
+  const antiguedad = Date.now() - fecha;
+  return antiguedad >= -60_000 && antiguedad <= VENTANA_ASOCIACION_EVIDENCIAS_MS;
+};
+
+const listarIncidentesAbiertos = async (telefono) => {
   try {
-
-    const response =
-      await axios.get(
-
-        `https://oszjlipttlqvyqwffrdc.supabase.co/rest/v1/incidentes?telefono=eq.${telefono}&estado=eq.pendiente&order=id.desc&limit=1`,
-
-        {
-          headers: {
-
-            apikey:
-              process.env.SUPABASE_SERVICE_KEY,
-
-            Authorization:
-              `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
-          },
+    const response = await axios.get(
+      `${SUPABASE_REST_URL}/incidentes`,
+      {
+        params: {
+          telefono: `eq.${telefono}`,
+          order: "id.desc",
+          limit: 100
+        },
+        headers: {
+          apikey: process.env.SUPABASE_SERVICE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`
         }
-      );
-
-    return response.data[0];
-
-  } catch (error) {
-
-    console.log(
-      "Error buscando incidente activo ❌"
+      }
     );
 
+    return (response.data || []).filter((incidente) =>
+      !incidenteEstaCerrado(incidente) &&
+      !incidenteEsGeneral(incidente) &&
+      incidenteEsReciente(incidente)
+    );
+  } catch (error) {
+    console.error(
+      "Error buscando incidentes abiertos:",
+      error.response?.data || error.message
+    );
     return null;
   }
+};
+
+const buscarIncidentePropioAbierto = async (incidenteId, telefono) => {
+  try {
+    const response = await axios.get(
+      `${SUPABASE_REST_URL}/incidentes`,
+      {
+        params: {
+          id: `eq.${incidenteId}`,
+          telefono: `eq.${telefono}`,
+          limit: 1
+        },
+        headers: {
+          apikey: process.env.SUPABASE_SERVICE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`
+        }
+      }
+    );
+
+    const incidente = response.data?.[0];
+    if (!incidente || incidenteEstaCerrado(incidente)) return null;
+    return incidente;
+  } catch (error) {
+    console.error(
+      "Error validando el incidente seleccionado:",
+      error.response?.data || error.message
+    );
+    return null;
+  }
+};
+
+const resolverIncidenteParaMensaje = async (telefono) => {
+  const seleccionadoId = seleccionCasoPorTelefono.get(telefono);
+
+  if (seleccionadoId) {
+    const seleccionado = await buscarIncidentePropioAbierto(seleccionadoId, telefono);
+    if (seleccionado) {
+      return { incidente: seleccionado, ambiguo: false, seleccionInvalida: false };
+    }
+
+    seleccionCasoPorTelefono.delete(telefono);
+    return { incidente: null, ambiguo: false, seleccionInvalida: true, incidentes: [] };
+  }
+
+  const abiertos = await listarIncidentesAbiertos(telefono);
+  if (!Array.isArray(abiertos)) {
+    return { incidente: null, ambiguo: false, seleccionInvalida: false, errorConsulta: true, incidentes: [] };
+  }
+  if (abiertos.length === 1) {
+    return { incidente: abiertos[0], ambiguo: false, seleccionInvalida: false };
+  }
+  if (abiertos.length > 1) {
+    return { incidente: null, ambiguo: true, seleccionInvalida: false, incidentes: abiertos };
+  }
+
+  return { incidente: null, ambiguo: false, seleccionInvalida: false, incidentes: [] };
+};
+
+const mensajeSeleccionCaso = (incidentes = []) => {
+  const ids = incidentes.slice(0, 10).map((item) => `#${item.id}`).join(", ");
+  const listado = ids ? `\nCasos abiertos recientes: ${ids}.` : "";
+
+  return `⚠️ Este número tiene más de un incidente abierto y no quiero asociar tu evidencia al caso equivocado.${listado}\n\nEscribe CASO seguido del número del incidente (por ejemplo: CASO 123) y después vuelve a enviar la fotografía, el audio o la ubicación. La selección seguirá activa hasta que escribas CANCELAR CASO.`;
 };
 
 /*
@@ -284,7 +409,7 @@ const actualizarUbicacion = async (
 
     await axios.patch(
 
-      `https://oszjlipttlqvyqwffrdc.supabase.co/rest/v1/incidentes?id=eq.${incidenteId}`,
+      `${SUPABASE_REST_URL}/incidentes?id=eq.${incidenteId}`,
 
       {
         ubicacion,
@@ -342,7 +467,7 @@ const actualizarImagen = async (
 
     await axios.patch(
 
-      `https://oszjlipttlqvyqwffrdc.supabase.co/rest/v1/incidentes?id=eq.${incidenteId}`,
+      `${SUPABASE_REST_URL}/incidentes?id=eq.${incidenteId}`,
 
       {
         imagen_url: imagenUrl
@@ -383,6 +508,38 @@ const actualizarImagen = async (
   }
 };
 
+// Guarda el análisis visual en las columnas confirmadas de la tabla incidentes.
+const actualizarAnalisisImagen = async (incidenteId, analisis) => {
+  try {
+    const datos = {
+      descripcion_visual: analisis?.descripcion_visual || null,
+      justificacion_prioridad: analisis?.justificacion || null,
+      requiere_revision: Boolean(analisis?.requiere_revision)
+    };
+
+    await axios.patch(
+      `${SUPABASE_REST_URL}/incidentes?id=eq.${incidenteId}`,
+      datos,
+      {
+        headers: {
+          apikey: process.env.SUPABASE_SERVICE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation"
+        }
+      }
+    );
+
+    console.log("Análisis visual guardado en Supabase ✅");
+  } catch (error) {
+    // Un error al guardar el análisis no debe impedir guardar la evidencia.
+    console.error(
+      "Error guardando análisis visual:",
+      error.response?.data || error.message
+    );
+  }
+};
+
 const actualizarAudio = async (
   incidenteId,
   audioUrl
@@ -392,7 +549,7 @@ const actualizarAudio = async (
 
     await axios.patch(
 
-      `https://oszjlipttlqvyqwffrdc.supabase.co/rest/v1/incidentes?id=eq.${incidenteId}`,
+      `${SUPABASE_REST_URL}/incidentes?id=eq.${incidenteId}`,
 
       {
         audio_url: audioUrl
@@ -447,7 +604,7 @@ const actualizarAnalisisAudio = async (
 
     await axios.patch(
 
-      `${process.env.SUPABASE_URL}/rest/v1/incidentes?id=eq.${incidenteId}`,
+      `${SUPABASE_REST_URL}/incidentes?id=eq.${incidenteId}`,
 
       {
 
@@ -546,127 +703,82 @@ const descargarAudioWhatsApp = async (
   }
 };
 
-const subirImagenSupabase = async (
-  imageUrl,
-  incidenteId
-) => {
-
+const subirImagenSupabase = async (rutaLocalImagen, incidenteId) => {
   try {
+    const imageBuffer = fs.readFileSync(rutaLocalImagen);
+    const nombreArchivo = `incidente_${incidenteId}_imagen_${Date.now()}_${randomUUID()}.jpg`;
 
-    const imageResponse =
-  fs.readFileSync(imageUrl);
-
-    const nombreArchivo =
-      `incidente_${incidenteId}_imagen.jpg`;
-
-   await axios.post(
-
-  `${process.env.SUPABASE_URL}/storage/v1/object/evidencias/${nombreArchivo}`,
-
-  imageResponse,
-
+    await axios.post(
+      `${SUPABASE_URL_BASE}/storage/v1/object/evidencias/${nombreArchivo}`,
+      imageBuffer,
       {
         headers: {
-
-          apikey:
-            process.env.SUPABASE_SERVICE_KEY,
-
-          Authorization:
-            `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
-
-          "Content-Type":
-            "image/jpeg",
-        },
+          apikey: process.env.SUPABASE_SERVICE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+          "Content-Type": "image/jpeg",
+          "x-upsert": "false"
+        }
       }
     );
 
-    const publicUrl =
-      `${process.env.SUPABASE_URL}/storage/v1/object/public/evidencias/${nombreArchivo}`;
+    const publicUrl = `${SUPABASE_URL_BASE}/storage/v1/object/public/evidencias/${nombreArchivo}`;
+    console.log("Imagen subida a Storage ✅", nombreArchivo);
 
-    console.log(
-      "Imagen subida a Storage ✅"
-    );
-
-    return publicUrl;
-
+    return {
+      publicUrl,
+      storagePath: nombreArchivo,
+      mimeType: "image/jpeg"
+    };
   } catch (error) {
-
-    console.log(
-      "Error subiendo imagen ❌"
+    console.error(
+      "Error subiendo imagen a Supabase Storage:",
+      error.response?.data || error.message
     );
-
-    console.log(
-      error.response?.data ||
-      error.message
-    );
-
     return null;
   }
 };
 
-const subirAudioSupabase = async (
-  audioUrl,
-  incidenteId
-) => {
-
+const subirAudioSupabase = async (audioUrl, incidenteId, mimeTypeRecibido = "audio/ogg") => {
   try {
+    const audioResponse = await axios.get(audioUrl, {
+      responseType: "arraybuffer",
+      headers: {
+        Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`
+      }
+    });
 
-    const audioResponse =
-      await axios.get(
-        audioUrl,
-        {
-          responseType: "arraybuffer",
-          headers: {
-            Authorization:
-              `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          },
-        }
-      );
-
-    const nombreArchivo =
-  `incidente_${incidenteId}_audio.ogg`;
+    const mimeType = String(mimeTypeRecibido || "audio/ogg").split(";")[0].trim();
+    const extension = mimeType.includes("mpeg") ? "mp3" :
+      mimeType.includes("mp4") ? "m4a" :
+      mimeType.includes("wav") ? "wav" : "ogg";
+    const nombreArchivo = `incidente_${incidenteId}_audio_${Date.now()}_${randomUUID()}.${extension}`;
 
     await axios.post(
-
-      `${process.env.SUPABASE_URL}/storage/v1/object/audios/${nombreArchivo}`,
-
-      audioResponse.data,
-
+      `${SUPABASE_URL_BASE}/storage/v1/object/audios/${nombreArchivo}`,
+      Buffer.from(audioResponse.data),
       {
         headers: {
-
-          apikey:
-            process.env.SUPABASE_SERVICE_KEY,
-
-          Authorization:
-            `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
-
-          "Content-Type":
-            "audio/ogg",
-        },
+          apikey: process.env.SUPABASE_SERVICE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+          "Content-Type": mimeType || "audio/ogg",
+          "x-upsert": "false"
+        }
       }
     );
 
-    const publicUrl =
-      `${process.env.SUPABASE_URL}/storage/v1/object/public/audios/${nombreArchivo}`;
+    const publicUrl = `${SUPABASE_URL_BASE}/storage/v1/object/public/audios/${nombreArchivo}`;
+    console.log("Audio subido a Storage ✅", nombreArchivo);
 
-    console.log(
-      "Audio subido a Storage ✅"
-    );
-
-    return publicUrl;
-
+    return {
+      publicUrl,
+      storagePath: nombreArchivo,
+      mimeType: mimeType || "audio/ogg"
+    };
   } catch (error) {
-
-    console.log(
-      "Error subiendo audio ❌"
+    console.error(
+      "Error subiendo audio a Supabase Storage:",
+      error.response?.data || error.message
     );
-
-    console.log(
-      error.response?.data ||
-      error.message
-    );
-
     return null;
   }
 };
@@ -735,75 +847,91 @@ const from =
     ========================================
     */
 
-    if (
-      message.type === "text"
-    ) {
+    if (message.type === "text") {
+      const text = message.text?.body?.trim() || "";
 
-      const text =
-        message.text?.body || "";
-
-        const resultadoGPT =
-  await analizarConGPT(text);
-
-  console.log("ANÁLISIS GPT:");
-console.log(resultadoGPT);
-console.log("=================================");
-
-
-console.log(
-  "GPT:",
-  resultadoGPT
-);
-
-//return res.sendStatus(200);
-
-      console.log(
-        "Mensaje de:",
-        from
-      );
-
-      console.log(
-        "Texto:",
-        text
-      );
-
-     const incidente =
-await guardarIncidente(
-  from,
-  text,
-
-  resultadoGPT.categoria,
-
-  resultadoGPT.prioridad.toLowerCase(),
-
-  resultadoGPT.categoria,
-
-  resultadoGPT.prioridad,
-
-  resultadoGPT.confianza
-);
-
-      if (!incidente) {
-
+      if (/^CANCELAR\s+CASO$/i.test(text)) {
+        seleccionCasoPorTelefono.delete(from);
+        await sendWhatsAppMessage(
+          from,
+          "✅ Selección de incidente cancelada. Cuando envíes una nueva evidencia, VIGYON IA buscará un único caso abierto reciente. Si hay varios, te pedirá elegir para evitar mezclarlos."
+        );
         return res.sendStatus(200);
       }
 
-      if (
-    resultadoGPT.categoria === "general"
-) {
+      const comandoCaso = text.match(/^CASO\s*#?\s*(\d+)$/i);
+      if (comandoCaso) {
+        const incidenteId = comandoCaso[1];
+        const incidente = await buscarIncidentePropioAbierto(incidenteId, from);
 
+        if (!incidente) {
+          await sendWhatsAppMessage(
+            from,
+            `⚠️ No encontré un incidente abierto con el número ${incidenteId} asociado a este teléfono. Revisa el número o envía CANCELAR CASO para quitar la selección actual.`
+          );
+          return res.sendStatus(200);
+        }
+
+        seleccionCasoPorTelefono.set(from, String(incidente.id));
         await sendWhatsAppMessage(
           from,
-
-          `✅ Mensaje recibido.\n\nVIGYON IA no detectó una emergencia crítica.`
+          `✅ Seleccionaste el incidente #${incidente.id}. Las próximas fotografías, audios y ubicaciones se asociarán a este caso hasta que elijas otro con CASO <número> o escribas CANCELAR CASO. Envía ahora la evidencia relacionada con este incidente.`
         );
+        return res.sendStatus(200);
+      }
 
-      } else {
+      const resultadoGPT = await analizarConGPT(text);
+      console.log("ANÁLISIS GPT TEXTO:", resultadoGPT);
 
+      const categoria = normalizarValor(resultadoGPT?.categoria);
+      const confianza = confianzaComoNumero(resultadoGPT?.confianza);
+      const generalConfirmado = categoria === "general" && confianza !== null && confianza >= 0.85;
+
+      if (generalConfirmado) {
+        // Solo descartar como general cuando el propio clasificador devuelve confianza alta.
         await sendWhatsAppMessage(
           from,
+          "ℹ️ Este mensaje no parece describir una emergencia o incidente operativo. Este canal está destinado a reportes concretos de situaciones que requieran atención. Si necesitas reportar una situación, describe qué ocurrió, dónde sucede y si alguien está en peligro. Si hay peligro inmediato, comunícate con las líneas oficiales de emergencia."
+        );
+        return res.sendStatus(200);
+      }
 
-          `🚨 VIGYON IA detectó una posible emergencia.\n\nTipo: ${resultadoGPT.categoria}\nPrioridad: ${resultadoGPT.prioridad}\n\n📍 Envía tu ubicación.\n🎤 Envía un audio corto.\n👮 Un operador revisará tu caso.`
+      const requiereRevisionManual = !categoria || categoria === "general";
+      const categoriaGuardar = requiereRevisionManual ? "por_revisar" : resultadoGPT.categoria;
+      const prioridadGuardar = requiereRevisionManual
+        ? "media"
+        : String(resultadoGPT.prioridad || "alta").toLowerCase();
+
+      // Un texto clasificado como nuevo incidente inicia un caso nuevo, no se anexa por error al seleccionado antes.
+      seleccionCasoPorTelefono.delete(from);
+
+      const incidente = await guardarIncidente(
+        from,
+        text,
+        categoriaGuardar,
+        prioridadGuardar,
+        categoriaGuardar,
+        requiereRevisionManual ? "Por revisar" : resultadoGPT.prioridad,
+        resultadoGPT?.confianza ?? null
+      );
+
+      if (!incidente) {
+        await sendWhatsAppMessage(
+          from,
+          "⚠️ Recibí tu mensaje, pero no pude guardar el reporte en este momento. Intenta enviarlo nuevamente en unos minutos."
+        );
+        return res.sendStatus(200);
+      }
+
+      if (requiereRevisionManual) {
+        await sendWhatsAppMessage(
+          from,
+          `⚠️ Registré el reporte #${incidente.id} para revisión manual porque la clasificación automática no pudo confirmar la categoría con suficiente confianza.\n\n📍 Envía tu ubicación y describe cualquier detalle que ayude al operador. Puedes adjuntar fotografías o audios relacionados.`
+        );
+      } else {
+        await sendWhatsAppMessage(
+          from,
+          `🚨 Registré el incidente #${incidente.id}.\n\nTipo: ${resultadoGPT.categoria}\nPrioridad: ${resultadoGPT.prioridad || "Por revisar"}\n\n📍 Envía tu ubicación.\n🎤 Puedes enviar un audio y 📷 fotografías relacionadas.\n👮 Un operador revisará el caso.`
         );
       }
 
@@ -816,155 +944,130 @@ IMAGEN
 ========================================
 */
 
- if (message.type === "image") {
+    if (message.type === "image") {
+      const asociacion = await resolverIncidenteParaMensaje(from);
 
-  console.log("🔥🔥🔥 VERSION NUEVA DEL BLOQUE IMAGE 🔥🔥🔥");
+      if (asociacion.errorConsulta) {
+        await sendWhatsAppMessage(
+          from,
+          "⚠️ No pude consultar los incidentes abiertos ahora mismo. Para no asociar la evidencia al caso equivocado, vuelve a enviarla en unos minutos."
+        );
+        return res.sendStatus(200);
+      }
 
-  console.log(
-    "Imagen recibida 📷"
-  );
+      if (asociacion.seleccionInvalida) {
+        await sendWhatsAppMessage(
+          from,
+          "⚠️ El incidente seleccionado ya no está disponible o fue cerrado. Envía CASO <número> para elegir un caso abierto y luego vuelve a enviar la fotografía."
+        );
+        return res.sendStatus(200);
+      }
 
-  console.log(
-    message.image
-  );
+      if (asociacion.ambiguo) {
+        await sendWhatsAppMessage(from, mensajeSeleccionCaso(asociacion.incidentes));
+        return res.sendStatus(200);
+      }
 
-  console.log(
-    "Imagen recibida 📷"
-  );
+      let incidente = asociacion.incidente;
+      const esEvidenciaAdicional = Boolean(incidente);
 
-  console.log(
-    message.image
-  );
+      if (!incidente) {
+        incidente = await guardarIncidente(
+          from,
+          "EVIDENCIA FOTOGRAFICA",
+          "evidencia",
+          "alta"
+        );
+      }
 
-  const incidente =
-    await guardarIncidente(
-      from,
-      "EVIDENCIA FOTOGRAFICA",
-      "evidencia",
-      "alta"
-    );
+      if (!incidente) {
+        await sendWhatsAppMessage(
+          from,
+          "⚠️ No pude crear o localizar el incidente para guardar la fotografía. Intenta nuevamente en unos minutos."
+        );
+        return res.sendStatus(200);
+      }
 
-  console.log(
-  "Incidente imagen:",
-  incidente
-);
-
-console.log(
-  "ENTRE A DESCARGA 🚀"
-);
-
-let imageUrl;
-
-try {
-
-    imageUrl = await descargarImagenWhatsApp(
-        message.image.id
-    );
-
-    console.log("✅ PASÓ descargarImagenWhatsApp");
-    console.log(imageUrl);
-
-} catch (error) {
-
-    console.error("🔥 ERROR EN descargarImagenWhatsApp");
-    console.error(error);
-
-}
-
-console.log(
-  "IMAGE URL:",
-  imageUrl
-);
-
-try {
-
-  console.log(
-    "PRUEBA A 🚀"
-  );
-
-
-} catch(error) {
-
-  console.log(
-    "ERROR PRUEBA 🚨"
-  );
-
-  console.log(error);
-
-}
-
-  console.log(
-  "PRUEBA A 🚀"
-);
-
-  if (
-    imageUrl &&
-    incidente
-  ) {
-
-    const publicUrl =
-  await subirImagenSupabase(
-    imageUrl,
-    incidente.id
-  );
-
-  console.log("========== DEBUG ==========");
-console.log("publicUrl:", publicUrl);
-console.log("typeof:", typeof publicUrl);
-console.log("===========================");
-
-    if (
-      publicUrl
-    ) {
-
-      await actualizarImagen(
-        incidente.id,
-        publicUrl
-      );
-
-      console.log(
-        "Imagen asociada al incidente ✅"
-      );
-
-      console.log("🚀🚀🚀 ENTRE A GUARDAR EVIDENCIA 🚀🚀🚀");
+      let rutaLocalImagen = null;
+      let evidenciaGuardada = false;
 
       try {
+        rutaLocalImagen = await descargarImagenWhatsApp(message.image?.id);
+        if (!rutaLocalImagen) throw new Error("No se obtuvo la ruta temporal de la imagen.");
 
-    console.log("🚀 Entrando a guardarEvidencia...");
+        // Analiza la imagen antes de borrar el archivo temporal. El resultado es apoyo para revisión humana.
+        try {
+          const analisisVisual = await analizarImagenConGPT(
+            rutaLocalImagen,
+            message.image?.caption || ""
+          );
 
-    const evidencia = await guardarEvidencia(
-        incidente.id,
-        "imagen",
-        `incidente_${incidente.id}_imagen.jpg`,
-        publicUrl,
-        "image/jpeg"
-    );
+          console.log("ANÁLISIS VISUAL:", analisisVisual);
+          await actualizarAnalisisImagen(incidente.id, analisisVisual);
+        } catch (error) {
+          console.error(
+            "No se pudo completar el análisis visual; se continuará guardando la imagen:",
+            error.response?.data || error.message
+          );
+        }
 
-    console.log("✅ guardarEvidencia terminó");
-    console.log(evidencia);
+        const subida = await subirImagenSupabase(rutaLocalImagen, incidente.id);
+        if (!subida?.publicUrl || !subida?.storagePath) {
+          throw new Error("No se pudo subir la imagen a Supabase Storage.");
+        }
 
-} catch (error) {
+        await actualizarImagen(incidente.id, subida.publicUrl);
 
-    console.error("❌ ERROR EN guardarEvidencia");
-    console.error(error);
+        try {
+          await guardarEvidencia(
+            incidente.id,
+            "imagen",
+            subida.storagePath,
+            subida.publicUrl,
+            subida.mimeType || "image/jpeg"
+          );
+          evidenciaGuardada = true;
+        } catch (error) {
+          console.error(
+            "La imagen se subió, pero no se pudo insertar su registro en evidencias:",
+            error.response?.data || error.message
+          );
+        }
+      } catch (error) {
+        console.error(
+          "Error procesando la imagen:",
+          error.response?.data || error.message
+        );
+        await sendWhatsAppMessage(
+          from,
+          `⚠️ No pude guardar la fotografía del incidente #${incidente.id}. Por favor, vuelve a enviarla. Si el caso sigue abierto, intentaré asociarla al mismo incidente.`
+        );
+        return res.sendStatus(200);
+      } finally {
+        if (rutaLocalImagen) {
+          try {
+            await fs.promises.unlink(rutaLocalImagen);
+          } catch (error) {
+            if (error.code !== "ENOENT") {
+              console.warn("No se pudo eliminar la imagen temporal:", error.message);
+            }
+          }
+        }
+      }
 
-}
+      const mensajeConfirmacion = esEvidenciaAdicional
+        ? `✅ Fotografía agregada al incidente #${incidente.id}. Puedes seguir enviando otras evidencias de este mismo caso.`
+        : `✅ Se creó el incidente #${incidente.id} y se recibió la fotografía. Puedes enviar más evidencias del mismo caso.\n\n📍 Envía tu ubicación para completar el reporte.`;
 
-console.log(
-    "✅ Evidencia registrada en la tabla evidencias"
-);
+      await sendWhatsAppMessage(
+        from,
+        evidenciaGuardada
+          ? mensajeConfirmacion
+          : `${mensajeConfirmacion}\n\n⚠️ La imagen quedó en almacenamiento, pero hubo un problema registrando sus datos para consulta; un operador deberá verificarla.`
+      );
 
-
+      return res.sendStatus(200);
     }
-  }
-
-  await sendWhatsAppMessage(
-    from,
-    "📷 Imagen recibida.\n\n📍 Ahora envía tu ubicación para asociarla al caso."
-  );
-
-  return res.sendStatus(200);
-}
 
 /*
 ====================================
@@ -972,145 +1075,186 @@ AUDIO
 ====================================
 */
 
-if (
-  message.type === "audio"
-) {
+    if (message.type === "audio") {
+      const asociacion = await resolverIncidenteParaMensaje(from);
 
-  console.log(
-    "Audio recibido 🎤"
-  );
+      if (asociacion.errorConsulta) {
+        await sendWhatsAppMessage(
+          from,
+          "⚠️ No pude consultar los incidentes abiertos ahora mismo. Para no asociar la evidencia al caso equivocado, vuelve a enviarla en unos minutos."
+        );
+        return res.sendStatus(200);
+      }
 
-  console.log(
-    message.audio
-  );
+      if (asociacion.seleccionInvalida) {
+        await sendWhatsAppMessage(
+          from,
+          "⚠️ El incidente seleccionado ya no está disponible o fue cerrado. Envía CASO <número> para elegir un caso abierto y luego vuelve a enviar el audio."
+        );
+        return res.sendStatus(200);
+      }
 
-  const incidente =
-    await guardarIncidente(
-      from,
-      "AUDIO RECIBIDO",
-      "audio",
-      "alta"
-    );
+      if (asociacion.ambiguo) {
+        await sendWhatsAppMessage(from, mensajeSeleccionCaso(asociacion.incidentes));
+        return res.sendStatus(200);
+      }
 
-  console.log(
-    "Incidente audio:",
-    incidente
-  );
+      const audioUrl = await descargarAudioWhatsApp(message.audio?.id);
+      if (!audioUrl) {
+        await sendWhatsAppMessage(
+          from,
+          "⚠️ No pude descargar el audio de WhatsApp. Por favor, vuelve a enviarlo."
+        );
+        return res.sendStatus(200);
+      }
 
-  const audioUrl =
-    await descargarAudioWhatsApp(
-      message.audio.id
-    );
+      let textoAudio = "";
+      let resultadoGPT = null;
 
-  console.log(
-    "AUDIO URL:",
-    audioUrl
-  );
+      try {
+        textoAudio = String(await transcribirAudio(audioUrl) || "").trim();
+        if (textoAudio) {
+          resultadoGPT = await analizarConGPT(textoAudio);
+        }
+      } catch (error) {
+        console.error(
+          "No se pudo transcribir/clasificar el audio; se conservará para revisión:",
+          error.response?.data || error.message
+        );
+      }
 
-  if (
-    audioUrl &&
-    incidente
-  ) {
+      const categoriaAudio = normalizarValor(resultadoGPT?.categoria);
+      const confianzaAudio = confianzaComoNumero(resultadoGPT?.confianza);
+      const generalAudioConfirmado = categoriaAudio === "general" && confianzaAudio !== null && confianzaAudio >= 0.85;
+      const requiereRevisionAudio = !categoriaAudio || categoriaAudio === "general";
+      const esEvidenciaAdicional = Boolean(asociacion.incidente);
 
-    const publicUrl =
-      await subirAudioSupabase(
+      // No descartar un audio como irrelevante si la confianza no es alta: se conserva para revisión humana.
+      if (!esEvidenciaAdicional && generalAudioConfirmado) {
+        await sendWhatsAppMessage(
+          from,
+          "ℹ️ El audio no parece describir una emergencia o incidente operativo. Por eso no abrí un caso nuevo. Si necesitas reportar una situación real, describe qué ocurrió y dónde sucede. Si el audio sí corresponde a una emergencia, vuelve a enviarlo o acompáñalo con una descripción escrita."
+        );
+        return res.sendStatus(200);
+      }
+
+      let incidente = asociacion.incidente;
+      if (!incidente) {
+        const categoriaGuardar = requiereRevisionAudio ? "por_revisar" : resultadoGPT.categoria;
+        const prioridadGuardar = requiereRevisionAudio
+          ? "media"
+          : String(resultadoGPT?.prioridad || "alta").toLowerCase();
+
+        incidente = await guardarIncidente(
+          from,
+          textoAudio || "AUDIO RECIBIDO - PENDIENTE DE REVISION",
+          categoriaGuardar || "audio",
+          prioridadGuardar,
+          categoriaGuardar || null,
+          requiereRevisionAudio ? "Por revisar" : (resultadoGPT?.prioridad || null),
+          resultadoGPT?.confianza ?? null
+        );
+      }
+
+      if (!incidente) {
+        await sendWhatsAppMessage(
+          from,
+          "⚠️ No pude crear o localizar un incidente para conservar el audio. Intenta enviarlo nuevamente en unos minutos."
+        );
+        return res.sendStatus(200);
+      }
+
+      const subida = await subirAudioSupabase(
         audioUrl,
-        incidente.id
-      );
-
-    if (
-      publicUrl
-    ) {
-
-      await actualizarAudio(
         incidente.id,
-        publicUrl
+        message.audio?.mime_type || "audio/ogg"
       );
 
-      const textoAudio =
-  await transcribirAudio(
-    audioUrl
-  );
+      if (!subida?.publicUrl || !subida?.storagePath) {
+        await sendWhatsAppMessage(
+          from,
+          `⚠️ No pude guardar el audio del incidente #${incidente.id}. Por favor, vuelve a enviarlo.`
+        );
+        return res.sendStatus(200);
+      }
 
-console.log(
-  "TEXTO AUDIO:",
-  textoAudio
-);
+      await actualizarAudio(incidente.id, subida.publicUrl);
 
-const resultadoGPT =
-await analizarConGPT(
-    textoAudio
-);
+      let evidenciaGuardada = false;
+      try {
+        await guardarEvidencia(
+          incidente.id,
+          "audio",
+          subida.storagePath,
+          subida.publicUrl,
+          subida.mimeType || message.audio?.mime_type || "audio/ogg"
+        );
+        evidenciaGuardada = true;
+      } catch (error) {
+        console.error(
+          "El audio se subió, pero no se pudo insertar su registro en evidencias:",
+          error.response?.data || error.message
+        );
+      }
 
-console.log("Datos que voy a guardar:");
-console.log({
-  categoria: resultadoGPT.categoria,
-  prioridad: resultadoGPT.prioridad,
-  confianza: resultadoGPT.confianza
-});
+      if (textoAudio) {
+        const mensajeAnterior = String(incidente.mensaje || "").trim();
+        const mensajeActualizado = esEvidenciaAdicional && mensajeAnterior
+          ? `${mensajeAnterior}\n\n[Audio adicional]: ${textoAudio}`
+          : textoAudio;
 
-await actualizarAnalisisAudio(
+        // Un audio clasificado como general no debe degradar la categoría de un incidente ya abierto.
+        if (esEvidenciaAdicional && (!resultadoGPT || categoriaAudio === "general")) {
+          await actualizarAnalisisAudio(
+            incidente.id,
+            mensajeActualizado,
+            incidente.tipo_delito || "evidencia",
+            incidente.prioridad || "alta",
+            incidente.categoria_gpt ?? null,
+            incidente.prioridad_gpt ?? null,
+            incidente.confianza_gpt ?? null
+          );
+        } else if (!esEvidenciaAdicional && requiereRevisionAudio) {
+          await actualizarAnalisisAudio(
+            incidente.id,
+            mensajeActualizado,
+            "por_revisar",
+            "media",
+            "por_revisar",
+            "Por revisar",
+            resultadoGPT?.confianza ?? null
+          );
+        } else if (resultadoGPT) {
+          await actualizarAnalisisAudio(
+            incidente.id,
+            mensajeActualizado,
+            resultadoGPT.categoria,
+            String(resultadoGPT.prioridad || "alta").toLowerCase(),
+            resultadoGPT.categoria,
+            resultadoGPT.prioridad,
+            resultadoGPT.confianza ?? null
+          );
+        }
+      }
 
-    incidente.id,
+      let confirmacion;
+      if (esEvidenciaAdicional) {
+        confirmacion = `✅ Audio agregado al incidente #${incidente.id}. Puedes seguir enviando otras evidencias relacionadas con este caso.`;
+      } else if (requiereRevisionAudio && textoAudio) {
+        confirmacion = `⚠️ Registré el audio en el caso #${incidente.id} para revisión manual porque la clasificación automática no pudo confirmar si corresponde a un incidente.\n\n📍 Envía tu ubicación si corresponde.`;
+      } else if (resultadoGPT && categoriaAudio !== "general") {
+        confirmacion = `🚨 Registré el incidente #${incidente.id}.\n\nTipo: ${resultadoGPT.categoria}\nPrioridad: ${resultadoGPT.prioridad || "Por revisar"}\n\n📍 Envía tu ubicación. Un operador revisará el caso.`;
+      } else {
+        confirmacion = `✅ Guardé el audio en el incidente #${incidente.id}, pero no se pudo obtener una transcripción automática. Un operador deberá revisarlo.\n\n📍 Envía tu ubicación si corresponde.`;
+      }
 
-    textoAudio,
+      if (!evidenciaGuardada) {
+        confirmacion += "\n\n⚠️ El archivo está en almacenamiento, pero hubo un problema registrando sus datos para consulta.";
+      }
 
-    resultadoGPT.categoria,
-
-    resultadoGPT.prioridad.toLowerCase(),
-
-    resultadoGPT.categoria,
-
-    resultadoGPT.prioridad,
-
-    resultadoGPT.confianza
-
-);
-
-console.log(
-    "GPT AUDIO:",
-    resultadoGPT
-);
-
-console.log(
-    "Audio asociado al incidente ✅"
-);
-
-if (
-    resultadoGPT.categoria === "general"
-) {
-
-    await sendWhatsAppMessage(
-
-        from,
-
-        `✅ Mensaje recibido.\n\nVIGYON IA no detectó una emergencia crítica.`
-
-    );
-
-} else {
-
-    await sendWhatsAppMessage(
-
-        from,
-
-        `🚨 VIGYON IA detectó una posible emergencia.\n\nTipo: ${resultadoGPT.categoria}\nPrioridad: ${resultadoGPT.prioridad}\n\n📍 Envía tu ubicación.\n👮 Un operador revisará tu caso.`
-
-    );
-
-}
+      await sendWhatsAppMessage(from, confirmacion);
+      return res.sendStatus(200);
     }
-  }
-
-  /*
-  await sendWhatsAppMessage(
-    from,
-    "🎤 Audio recibido.\n\n📍 Ahora envía tu ubicación para asociarla al caso."
-  );
-  */
-
-  return res.sendStatus(200);
-}
 
     /*
     ========================================
@@ -1118,53 +1262,53 @@ if (
     ========================================
     */
 
-    if (
-      message.type === "location"
-    ) {
+    if (message.type === "location") {
+      const latitude = message.location?.latitude;
+      const longitude = message.location?.longitude;
 
-      const latitude =
-        message.location.latitude;
-
-      const longitude =
-        message.location.longitude;
-
-      const ubicacion =
-        `${latitude}, ${longitude}`;
-
-      const googleMaps =
-        `https://maps.google.com/?q=${latitude},${longitude}`;
-
-      console.log(
-        "Ubicación:",
-        ubicacion
-      );
-
-      const incidenteActivo =
-        await buscarIncidenteActivo(
-          from
-        );
-
-      if (!incidenteActivo) {
-
-        console.log(
-          "No existe incidente activo ❌"
-        );
-
+      if (latitude == null || longitude == null) {
+        await sendWhatsAppMessage(from, "⚠️ No pude leer las coordenadas. Vuelve a compartir tu ubicación desde WhatsApp.");
         return res.sendStatus(200);
       }
 
-      await actualizarUbicacion(
-        incidenteActivo.id,
-        ubicacion,
-        googleMaps
-      );
+      const ubicacion = `${latitude}, ${longitude}`;
+      const googleMaps = `https://maps.google.com/?q=${latitude},${longitude}`;
+      const asociacion = await resolverIncidenteParaMensaje(from);
 
+      if (asociacion.errorConsulta) {
+        await sendWhatsAppMessage(
+          from,
+          "⚠️ No pude consultar los incidentes abiertos ahora mismo. Para no asociar la evidencia al caso equivocado, vuelve a enviarla en unos minutos."
+        );
+        return res.sendStatus(200);
+      }
+
+      if (asociacion.seleccionInvalida) {
+        await sendWhatsAppMessage(
+          from,
+          "⚠️ El incidente seleccionado ya no está disponible o fue cerrado. Envía CASO <número> para elegir un caso abierto y comparte nuevamente tu ubicación."
+        );
+        return res.sendStatus(200);
+      }
+
+      if (asociacion.ambiguo) {
+        await sendWhatsAppMessage(from, mensajeSeleccionCaso(asociacion.incidentes));
+        return res.sendStatus(200);
+      }
+
+      if (!asociacion.incidente) {
+        await sendWhatsAppMessage(
+          from,
+          "ℹ️ Recibí la ubicación, pero no encontré un reporte abierto reciente para asociarla. Primero describe la situación por mensaje o audio; después podrás compartir la ubicación."
+        );
+        return res.sendStatus(200);
+      }
+
+      await actualizarUbicacion(asociacion.incidente.id, ubicacion, googleMaps);
       await sendWhatsAppMessage(
         from,
-
-        `📍 Ubicación recibida correctamente.\n\n🗺️ ${googleMaps}\n\n🚔 Las autoridades fueron notificadas.`
+        `📍 Ubicación asociada al incidente #${asociacion.incidente.id}.\n\n🗺️ ${googleMaps}\n\n🚔 Un operador podrá revisar el reporte y su ubicación.`
       );
-
       return res.sendStatus(200);
     }
 
